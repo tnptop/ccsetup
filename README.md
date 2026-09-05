@@ -1,19 +1,21 @@
 # ccsetup
 
 Claude Code configuration, shared across machines. This repo is the source of truth.
-`install.sh` links the files into `$HOME`, so an edit on any machine is a commit here.
+`install.sh` copies the files into `$HOME`. Nothing in `$HOME` points at this folder,
+so moving or deleting the repo never breaks Claude. The cost: after editing config in
+`~/.claude`, run `./install.sh sync` to bring the change back here before you commit.
 
 ## Layout
 
-| Repo path | Links to | Notes |
+| Repo path | Copied to | Notes |
 |---|---|---|
 | `claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | Global instructions |
 | `claude/settings.json` | `~/.claude/settings.json` | Machine-specific `autoMode.environment` is stripped |
 | `claude/hooks/` | `~/.claude/hooks/` | Both hooks need `jq` |
 | `claude/statusline-command.sh` | `~/.claude/statusline-command.sh` | Needs `jq` |
-| `claude/agents/*.md` | `~/.claude/agents/*.md` | `cursor-worker.md` is linked only when `cursor-agent` is on PATH |
+| `claude/agents/*.md` | `~/.claude/agents/*.md` | `cursor-worker.md` is copied only when `cursor-agent` is on PATH |
 | `claude/skills/{park,claim-task}` | `~/.claude/skills/...` | Hand-written skills that live in `~/.claude/skills` |
-| `dot-agents/skills/` | `~/.agents/skills/` | Skills installed with the `skills` CLI, plus 4 hand-written ones |
+| `dot-agents/skills/` | `~/.agents/skills/` | Skills installed with the `skills` CLI, plus 4 hand-written ones. `~/.claude/skills/<name>` gets a relative symlink to each |
 | `dot-agents/.skill-lock.json` | `~/.agents/.skill-lock.json` | Lets `npx skills update` keep working |
 | `workspace/colleague-output-style.md` | `~/workspace/colleague-output-style.md` | Referenced by CLAUDE.md |
 | `memory/workspace-personal/` | `~/.claude/projects/<slug>/memory/` | Copied once, never overwritten |
@@ -46,9 +48,15 @@ Not in the repo on purpose: `~/.claude.json` (login, machine ID), `settings.loca
 
 ## Day to day
 
-- Edit files under `~/.claude` as usual. They are symlinks, so `git status` here shows the change.
-- `./install.sh --check` reports any target that stopped being a link (for example after a tool rewrote `settings.json` in place). Re-run `./install.sh` to relink.
-- `npx skills update` (in `~`) updates the third-party skills; commit the result.
+- Edit files under `~/.claude` as usual.
+- `./install.sh --check` lists files that differ between `~/.claude` and the repo.
+- `./install.sh sync` copies `$HOME` into the repo. Review with `git diff`, then commit and push.
+- On the other machine: `git pull`, then `./install.sh`. Files it overwrites are backed up under `~/.claude/backups/ccsetup-<timestamp>/`.
+- `./install.sh --rollback` restores the newest backup.
+- `npx skills update` (in `~`) updates the third-party skills; then `sync` and commit.
+
+`settings.json` is special: the `autoMode` block is machine-specific. `sync` strips it,
+`install` keeps whatever the machine already has.
 
 ## Windows
 
