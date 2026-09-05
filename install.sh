@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # ccsetup: copies Claude Code config between this repo and $HOME.
 # Files in $HOME stay real files. Nothing in $HOME points at this repo.
+# This repo is the shared setup standard; $HOME holds a plain copy that
+# may deviate per machine until you promote a chosen change back here.
 #
 # Usage:
-#   ./install.sh                 copy repo -> $HOME (backs up files it overwrites)
-#   ./install.sh sync            copy $HOME -> repo (run before you commit)
-#   ./install.sh --check         list files that differ between repo and $HOME
-#   ./install.sh --dry-run       with install or sync: print, touch nothing
-#   ./install.sh plugins         add marketplaces and install plugins via `claude`
-#   ./install.sh --rollback [d]  restore a backup dir (default: the newest one)
+#   ./install.sh                   copy repo -> $HOME (backs up files it overwrites)
+#   ./install.sh sync              copy $HOME -> repo, everything at once (run before you commit)
+#   ./install.sh promote <path>... copy only these paths $HOME -> repo (new files ok)
+#   ./install.sh --check           list files that differ between repo and $HOME
+#   ./install.sh --dry-run         with install, sync, or promote: print, touch nothing
+#   ./install.sh plugins           add marketplaces and install plugins via `claude`
+#   ./install.sh --rollback [d]    restore a backup dir (default: the newest one)
 #
 # Paths derive from $HOME, so the same script works for any username.
 set -euo pipefail
@@ -23,20 +26,31 @@ EXCLUDES=(--exclude .DS_Store --exclude '*.bak')
 # Skills present in dot-agents/skills that get NO ~/.claude/skills entry.
 SKIP_SKILLS="critique-plan-implementation microsoft-foundry to-issues to-prd"
 
-DRY=0; MODE="install"; ROLLBACK_DIR=""
+DRY=0; MODE="install"; ROLLBACK_DIR=""; PROMOTE_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run)  DRY=1 ;;
     --check)    MODE="check" ;;
     sync)       MODE="sync" ;;
     plugins)    MODE="plugins" ;;
+    promote)    MODE="promote"; break ;;   # everything after "promote" is paths, handled below
     --rollback) MODE="rollback"
                 if [ $# -gt 1 ] && [ "${2#-}" = "$2" ]; then ROLLBACK_DIR="$2"; shift; fi ;;
-    -h|--help)  sed -n '2,13p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
 done
+if [ "$MODE" = "promote" ]; then
+  shift   # drop the "promote" token itself
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dry-run) DRY=1 ;;
+      *)         PROMOTE_ARGS+=("$1") ;;
+    esac
+    shift
+  done
+fi
 
 log() { printf '%s\n' "$*"; }
 run() { if [ "$DRY" = 1 ]; then log "  dry: $*"; else "$@"; fi; }
@@ -111,6 +125,94 @@ sync_settings() {
   tmp=$(mktemp)
   jq 'del(.autoMode)' "$src" > "$tmp"
   copy "$tmp" "$dst"; rm -f "$tmp"
+}
+
+promote_usage_paths() {
+  cat >&2 <<EOF
+promote accepts one of these (absolute, ~/-prefixed, or the repo-relative form):
+  $CLAUDE/CLAUDE.md                <-> claude/CLAUDE.md
+  $CLAUDE/settings.json            <-> claude/settings.json
+  $CLAUDE/statusline-command.sh    <-> claude/statusline-command.sh
+  $CLAUDE/hooks/<name>             <-> claude/hooks/<name>
+  $CLAUDE/agents/<name>.md         <-> claude/agents/<name>.md
+  $CLAUDE/skills/<name>            <-> claude/skills/<name>  (real dir, not a symlink)
+  $AGENTS/skills/<name>            <-> dot-agents/skills/<name>
+  $AGENTS/.skill-lock.json         <-> dot-agents/.skill-lock.json
+  $HOME/workspace/colleague-output-style.md <-> workspace/colleague-output-style.md
+EOF
+}
+
+# promote_resolve <path>: sets PR_REPO (repo-relative) and PR_HOME (absolute
+# home path), or prints an error and exits. Inverse of pairs(), extended to
+# paths that don't exist in the repo yet.
+promote_resolve() {
+  local input="$1" p name
+  p="${input%/}"                 # strip one trailing slash (directory args)
+  [ -n "$p" ] || p="/"
+  case "$p" in
+    \~)   p="$HOME" ;;
+    \~/*) p="$HOME/${p#\~/}" ;;
+  esac
+  case "$p" in
+    "$CLAUDE/CLAUDE.md")               PR_REPO="claude/CLAUDE.md" ;;
+    "$CLAUDE/settings.json")           PR_REPO="claude/settings.json" ;;
+    "$CLAUDE/statusline-command.sh")   PR_REPO="claude/statusline-command.sh" ;;
+    "$CLAUDE/hooks/"*)
+      name="${p#"$CLAUDE"/hooks/}"; PR_REPO="claude/hooks/$name" ;;
+    "$CLAUDE/agents/"*.md)
+      name="${p#"$CLAUDE"/agents/}"; PR_REPO="claude/agents/$name" ;;
+    "$CLAUDE/skills/"*)
+      name="${p#"$CLAUDE"/skills/}"; PR_REPO="claude/skills/$name" ;;
+    "$AGENTS/skills/"*)
+      name="${p#"$AGENTS"/skills/}"; PR_REPO="dot-agents/skills/$name" ;;
+    "$AGENTS/.skill-lock.json")        PR_REPO="dot-agents/.skill-lock.json" ;;
+    "$HOME/workspace/colleague-output-style.md")
+      PR_REPO="workspace/colleague-output-style.md" ;;
+    claude/CLAUDE.md)                  PR_REPO="$p" ;;
+    claude/settings.json)              PR_REPO="$p" ;;
+    claude/statusline-command.sh)      PR_REPO="$p" ;;
+    claude/hooks/*)                    PR_REPO="$p" ;;
+    claude/agents/*.md)                PR_REPO="$p" ;;
+    claude/skills/*)                   PR_REPO="$p" ;;
+    dot-agents/skills/*)               PR_REPO="$p" ;;
+    dot-agents/.skill-lock.json)       PR_REPO="$p" ;;
+    workspace/colleague-output-style.md) PR_REPO="$p" ;;
+    *)
+      log "error: don't know how to promote '$input'"
+      promote_usage_paths
+      exit 2
+      ;;
+  esac
+  case "$PR_REPO" in
+    claude/CLAUDE.md)               PR_HOME="$CLAUDE/CLAUDE.md" ;;
+    claude/settings.json)           PR_HOME="$CLAUDE/settings.json" ;;
+    claude/statusline-command.sh)   PR_HOME="$CLAUDE/statusline-command.sh" ;;
+    claude/hooks/*)
+      name="${PR_REPO#claude/hooks/}"; PR_HOME="$CLAUDE/hooks/$name" ;;
+    claude/agents/*.md)
+      name="${PR_REPO#claude/agents/}"; PR_HOME="$CLAUDE/agents/$name" ;;
+    claude/skills/*)
+      name="${PR_REPO#claude/skills/}"; PR_HOME="$CLAUDE/skills/$name"
+      if [ -L "$PR_HOME" ]; then
+        log "error: $PR_HOME is a symlink; promote $AGENTS/skills/$name instead"
+        exit 2
+      fi
+      ;;
+    dot-agents/skills/*)
+      name="${PR_REPO#dot-agents/skills/}"; PR_HOME="$AGENTS/skills/$name" ;;
+    dot-agents/.skill-lock.json)    PR_HOME="$AGENTS/.skill-lock.json" ;;
+    workspace/colleague-output-style.md)
+      PR_HOME="$HOME/workspace/colleague-output-style.md" ;;
+  esac
+  if [ ! -e "$PR_HOME" ]; then
+    log "error: $PR_HOME does not exist"
+    exit 1
+  fi
+  case "$PR_REPO" in
+    claude/skills/*)
+      [ -d "$PR_HOME" ] || { log "error: $PR_HOME is not a directory"; exit 2; }
+      ;;
+  esac
 }
 
 # ~/.claude/skills/<name> -> ../../.agents/skills/<name> (relative, inside $HOME)
@@ -193,6 +295,25 @@ case "$MODE" in
     done < <(pairs)
     rm -rf "$REPO/.sync-backup"
     log "done. Review with: git status && git diff"
+    ;;
+  promote)
+    if [ ${#PROMOTE_ARGS[@]} -eq 0 ]; then
+      sed -n '2,16p' "$0" >&2
+      exit 2
+    fi
+    BACKUP="$REPO/.sync-backup"   # repo side is under git; no backup needed
+    log "promoting \$HOME -> repo"
+    for raw in "${PROMOTE_ARGS[@]}"; do
+      promote_resolve "$raw"
+      case "$PR_REPO" in
+        claude/settings.json) sync_settings ;;
+        *) copy "$PR_HOME" "$REPO/$PR_REPO" ;;
+      esac
+    done
+    rm -rf "$REPO/.sync-backup"
+    log "done."
+    git -C "$REPO" status --short
+    log "review with: git diff   then: git add <paths> && git commit"
     ;;
   check)
     while IFS='|' read -r src dst; do

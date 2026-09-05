@@ -1,9 +1,11 @@
 # ccsetup
 
-Claude Code configuration, shared across machines. This repo is the source of truth.
-`install.sh` copies the files into `$HOME`. Nothing in `$HOME` points at this folder,
-so moving or deleting the repo never breaks Claude. The cost: after editing config in
-`~/.claude`, run `./install.sh sync` to bring the change back here before you commit.
+This repo is the shared Claude Code setup standard. `install.sh` copies its files into
+`$HOME`. Nothing in `$HOME` points back at the repo, so moving or deleting the repo never
+breaks Claude. The copy in `$HOME` is allowed to deviate per machine — that's expected.
+When a local change should apply on every machine, promote only that path back into the
+repo with `./install.sh promote <path>` or the `/promote-to-shared` skill, then review,
+commit, and push.
 
 ## Layout
 
@@ -14,7 +16,7 @@ so moving or deleting the repo never breaks Claude. The cost: after editing conf
 | `claude/hooks/` | `~/.claude/hooks/` | Both hooks need `jq` |
 | `claude/statusline-command.sh` | `~/.claude/statusline-command.sh` | Needs `jq` |
 | `claude/agents/*.md` | `~/.claude/agents/*.md` | `cursor-worker.md` is copied only when `cursor-agent` is on PATH |
-| `claude/skills/{park,claim-task}` | `~/.claude/skills/...` | Hand-written skills that live in `~/.claude/skills` |
+| `claude/skills/{park,claim-task,promote-to-shared}` | `~/.claude/skills/...` | Hand-written skills that live in `~/.claude/skills` |
 | `dot-agents/skills/` | `~/.agents/skills/` | Skills installed with the `skills` CLI, plus 4 hand-written ones. `~/.claude/skills/<name>` gets a relative symlink to each |
 | `dot-agents/.skill-lock.json` | `~/.agents/.skill-lock.json` | Lets `npx skills update` keep working |
 | `workspace/colleague-output-style.md` | `~/workspace/colleague-output-style.md` | Referenced by CLAUDE.md |
@@ -50,8 +52,10 @@ Not in the repo on purpose: `~/.claude.json` (login, machine ID), `settings.loca
 
 - Edit files under `~/.claude` as usual.
 - `./install.sh --check` lists files that differ between `~/.claude` and the repo.
-- `./install.sh sync` copies `$HOME` into the repo. Review with `git diff`, then commit and push.
+- `./install.sh promote <path>...` copies only those paths from `$HOME` into the repo (new files included).
+- `./install.sh sync` copies everything from `$HOME` into the repo at once. Use it for a full re-baselining, not for day-to-day sharing — `promote` is for that.
 - On the other machine: `git pull`, then `./install.sh`. Files it overwrites are backed up under `~/.claude/backups/ccsetup-<timestamp>/`.
+- A full `./install.sh` overwrites this machine's local deviations (backups land under `~/.claude/backups/ccsetup-<timestamp>/`), so after `git pull`, prefer copying single files by hand when this machine has intentional deviations.
 - `./install.sh --rollback` restores the newest backup.
 - `npx skills update` (in `~`) updates the third-party skills; then `sync` and commit.
 
