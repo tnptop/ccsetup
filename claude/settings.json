@@ -1,0 +1,107 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean:*)",
+      "Bash(git branch -D:*)",
+      "Bash(git checkout .)",
+      "Bash(git checkout . *)",
+      "Bash(git restore .)",
+      "Bash(git restore . *)"
+    ],
+    "defaultMode": "auto"
+  },
+  "model": "fable[1m]",
+  "skillOverrides": {
+    "ask-matt": "off",
+    "claude-handoff": "off",
+    "decision-mapping": "off",
+    "design-an-interface": "off",
+    "diagnosing-bugs": "off",
+    "domain-modeling": "off",
+    "edit-article": "off",
+    "find-skills": "off",
+    "implement": "off",
+    "loop-me": "off",
+    "migrate-to-shoehorn": "off",
+    "obsidian-vault": "off",
+    "prototype": "off",
+    "qa": "off",
+    "request-refactor-plan": "off",
+    "research": "off",
+    "resolving-merge-conflicts": "off",
+    "review": "off",
+    "scaffold-exercises": "off",
+    "setup-pre-commit": "off",
+    "tdd": "off",
+    "triage": "off",
+    "ubiquitous-language": "off",
+    "wizard": "off",
+    "writing-beats": "off",
+    "writing-fragments": "off",
+    "writing-great-skills": "off",
+    "writing-shape": "off",
+    "to-spec": "off",
+    "to-tickets": "off",
+    "wayfinder": "off",
+    "grill-me": "off",
+    "grill-with-docs": "off",
+    "setup-matt-pocock-skills": "off",
+    "improve": "off"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/block-dangerous-git.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline-command.sh"
+  },
+  "enabledPlugins": {
+    "code-review@claude-plugins-official": false,
+    "figma@claude-plugins-official": false,
+    "frontend-design@claude-plugins-official": true,
+    "warp@claude-code-warp": true,
+    "codex@openai-codex": true
+  },
+  "extraKnownMarketplaces": {
+    "claude-code-warp": {
+      "source": {
+        "source": "github",
+        "repo": "warpdotdev/claude-code-warp"
+      }
+    },
+    "openai-codex": {
+      "source": {
+        "source": "github",
+        "repo": "openai/codex-plugin-cc"
+      }
+    }
+  },
+  "effortLevel": "high",
+  "tui": "fullscreen",
+  "skipDangerousModePermissionPrompt": true,
+  "autoCompactEnabled": false,
+  "agentPushNotifEnabled": true
+}

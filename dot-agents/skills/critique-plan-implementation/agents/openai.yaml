@@ -1,0 +1,4 @@
+interface:
+  display_name: "Critique Plan Implementation"
+  short_description: "Review implementation against a plan"
+  default_prompt: "Use $critique-plan-implementation to review this plan-backed implementation and return evidence-backed findings."
