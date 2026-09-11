@@ -20,9 +20,10 @@ commit, and push.
 | `dot-agents/skills/` | `~/.agents/skills/` | Skills installed with the `skills` CLI, plus 4 hand-written ones. `~/.claude/skills/<name>` gets a relative symlink to each |
 | `dot-agents/.skill-lock.json` | `~/.agents/.skill-lock.json` | Lets `npx skills update` keep working |
 | `workspace/colleague-output-style.md` | `~/workspace/colleague-output-style.md` | Referenced by CLAUDE.md |
-| `memory/workspace-personal/` | `~/.claude/projects/<slug>/memory/` | Copied once, never overwritten |
+| `memory/<name>/` | `~/.claude/projects/<slug>/memory/` | `workspace` and `workspace-personal` today; `-` in the name means `/` under `$HOME`. Copied once, never overwritten. `sync` does not copy memory back; refresh by hand with `rsync` before a migration |
 
 Not in the repo on purpose: `~/.claude.json` (login, machine ID), `settings.local.json`,
+the `autoMode` block of `settings.json` (machine-specific; on the 2026 work Mac it also carries a `soft_deny` list, copy that by hand),
 `task-anchors/`, session history, plugin caches.
 
 ## New Mac (about 30 minutes)

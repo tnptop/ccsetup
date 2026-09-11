@@ -236,16 +236,21 @@ link_skills() {
 
 install_memory() {
   # Memory is per-machine and Claude writes to it, so copy once; never overwrite.
-  local slug dst src="$REPO/memory/workspace-personal"
-  slug=$(printf '%s' "$HOME/workspace/personal" | sed 's/[^A-Za-z0-9]/-/g')
-  dst="$CLAUDE/projects/$slug/memory"
-  if [ -e "$dst/MEMORY.md" ]; then
-    log "  ok   $dst (exists, not touched)"
-  else
-    log "  copy $src -> $dst"
-    run mkdir -p "$dst"
-    run cp -R "$src/." "$dst/"
-  fi
+  # memory/<name>/ maps to ~/.claude/projects/<slug of $HOME/<name with - as />>/memory
+  # e.g. memory/workspace-personal -> ~/workspace/personal, memory/workspace -> ~/workspace
+  local name slug dst src
+  for src in "$REPO"/memory/*/; do
+    src=${src%/}; name=$(basename "$src")
+    slug=$(printf '%s' "$HOME/$(printf '%s' "$name" | tr '-' '/')" | sed 's/[^A-Za-z0-9]/-/g')
+    dst="$CLAUDE/projects/$slug/memory"
+    if [ -e "$dst/MEMORY.md" ]; then
+      log "  ok   $dst (exists, not touched)"
+    else
+      log "  copy $src -> $dst"
+      run mkdir -p "$dst"
+      run cp -R "$src/." "$dst/"
+    fi
+  done
 }
 
 preflight() {
