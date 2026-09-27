@@ -48,7 +48,28 @@
     "grill-me": "off",
     "grill-with-docs": "off",
     "setup-matt-pocock-skills": "off",
-    "improve": "off"
+    "improve": "off",
+    "built-in-browser": "off",
+    "chrome-browser": "off",
+    "computer-use": "off",
+    "anthropic-skills:deep-research": "off",
+    "docs": "off",
+    "docx": "off",
+    "import-memory": "off",
+    "morning": "off",
+    "pdf": "off",
+    "pptx": "off",
+    "skill-creator": "off",
+    "xlsx": "off",
+    "dataviz": "off",
+    "claude-api": "off",
+    "artifact-capabilities": "off",
+    "update-config": "off",
+    "keybindings-help": "off",
+    "schedule": "off",
+    "loop": "off",
+    "claude-in-chrome": "off",
+    "run": "off"
   },
   "hooks": {
     "PreToolUse": [
@@ -82,26 +103,27 @@
     "code-review@claude-plugins-official": false,
     "figma@claude-plugins-official": false,
     "frontend-design@claude-plugins-official": true,
-    "warp@claude-code-warp": true,
-    "codex@openai-codex": true
+    "codex@openai-codex": true,
+    "warp@claude-code-warp": true
   },
   "extraKnownMarketplaces": {
-    "claude-code-warp": {
-      "source": {
-        "source": "github",
-        "repo": "warpdotdev/claude-code-warp"
-      }
-    },
     "openai-codex": {
       "source": {
         "source": "github",
         "repo": "openai/codex-plugin-cc"
+      }
+    },
+    "claude-code-warp": {
+      "source": {
+        "source": "github",
+        "repo": "warpdotdev/claude-code-warp"
       }
     }
   },
   "effortLevel": "high",
   "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
+  "theme": "dark",
   "autoCompactEnabled": false,
   "agentPushNotifEnabled": true
 }
