@@ -63,6 +63,26 @@ the `autoMode` block of `settings.json` (machine-specific; on the 2026 work Mac 
 `settings.json` is special: the `autoMode` block is machine-specific. `sync` strips it,
 `install` keeps whatever the machine already has.
 
+## Machine branches
+
+`main` holds only what every machine shares. Each machine keeps its own state on a
+branch named `machine/<user>`, for example `machine/thanapbh` for the work Mac.
+
+What goes where:
+
+| Goes to `main` | Stays on `machine/<user>` |
+|---|---|
+| CLAUDE.md rules, agents, hooks, skills | The `autoMode` block of `settings.json` (org context, `soft_deny`) |
+| Preferences in `settings.json`: theme, skill toggles | Pointer files to paths that exist only on that machine |
+| Memory seed under `memory/` | Backups and `.bak` files |
+
+How to work with a machine branch:
+
+1. Make the shared change on a branch off `main`, or promote it with `./install.sh promote <path>`. Merge that into `main`.
+2. On the machine branch, run `git merge main`. Fix conflicts in favour of `main` unless the line is machine-only.
+3. Commit machine-only files directly on the machine branch. Never merge the machine branch into `main`.
+4. On a new machine, start from `main`, run `./install.sh`, then create `machine/<user>` for that machine's own state.
+
 ## Windows
 
 Not wired yet. `docs/2026-07-25-mac-to-windows-sync.md` is the last manual sync.
