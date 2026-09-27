@@ -6,7 +6,7 @@
 #
 # Usage:
 #   ./install.sh                   copy repo -> $HOME (backs up files it overwrites)
-#   ./install.sh sync              copy $HOME -> repo, everything at once (run before you commit)
+#   ./install.sh sync              copy $HOME -> repo, everything at once (run before you commit; on a machine/<user> branch settings.json syncs unchanged)
 #   ./install.sh promote <path>... copy only these paths $HOME -> repo (new files ok)
 #   ./install.sh --check           list files that differ between repo and $HOME
 #   ./install.sh --dry-run         with install, sync, or promote: print, touch nothing
@@ -75,6 +75,9 @@ pairs() {
   done
 }
 
+# newest <path>: YYYY-MM-DD of the newest file under path (path itself when it is a file)
+newest() { find "$1" -type f -not -name .DS_Store -exec stat -f '%m' {} + 2>/dev/null | sort -n | tail -1 | xargs -I{} date -r {} +%Y-%m-%d; }
+
 same() { # same <a> <b>: true when file/dir contents match
   local a="$1" b="$2"
   [ -e "$a" ] && [ -e "$b" ] || return 1
@@ -104,8 +107,12 @@ copy() { # copy <src> <dst>: rsync, with a backup of dst when it differs
   fi
 }
 
-# settings.json: the repo copy has no autoMode block (it is machine-specific).
-# Install keeps the machine's existing autoMode; sync strips it.
+# On a machine/<user> branch the repo copy of settings.json keeps autoMode.
+on_machine_branch() { case "$(git -C "$REPO" branch --show-current 2>/dev/null)" in machine/*) return 0 ;; *) return 1 ;; esac; }
+
+# settings.json: the repo copy has no autoMode block (it is machine-specific),
+# except on a machine/<user> branch, where it keeps it.
+# Install keeps the machine's existing autoMode; sync strips it (unless on that branch).
 install_settings() {
   local src="$REPO/claude/settings.json" dst="$CLAUDE/settings.json" tmp
   if [ -f "$dst" ] && [ ! -L "$dst" ] && jq -e '.autoMode' "$dst" >/dev/null 2>&1; then
@@ -118,9 +125,13 @@ install_settings() {
 }
 sync_settings() {
   local src="$CLAUDE/settings.json" dst="$REPO/claude/settings.json" tmp
-  tmp=$(mktemp)
-  jq 'del(.autoMode)' "$src" > "$tmp"
-  copy "$tmp" "$dst"; rm -f "$tmp"
+  if on_machine_branch; then
+    copy "$src" "$dst"
+  else
+    tmp=$(mktemp)
+    jq 'del(.autoMode)' "$src" > "$tmp"
+    copy "$tmp" "$dst"; rm -f "$tmp"
+  fi
 }
 
 promote_usage_paths() {
@@ -319,10 +330,12 @@ case "$MODE" in
   check)
     while IFS='|' read -r src dst; do
       if [ -L "$dst" ]; then log "  LINK    $dst (symlink; expected a real file)"
-      elif [ "$src" = claude/settings.json ] && [ -f "$dst" ] \
-           && cmp -s <(jq -S 'del(.autoMode)' "$dst") <(jq -S . "$REPO/$src"); then log "  ok      $dst"
+      elif [ "$src" = claude/settings.json ] && [ -f "$dst" ] && {
+             if on_machine_branch; then cmp -s <(jq -S . "$dst") <(jq -S . "$REPO/$src")
+             else cmp -s <(jq -S 'del(.autoMode)' "$dst") <(jq -S . "$REPO/$src"); fi
+           }; then log "  ok      $dst"
       elif same "$REPO/$src" "$dst"; then log "  ok      $dst"
-      elif [ -e "$dst" ]; then log "  DIFF    $dst"
+      elif [ -e "$dst" ]; then log "  DIFF    $dst (repo $(newest "$REPO/$src"), home $(newest "$dst"))"
       else log "  MISSING $dst"; fi
     done < <(pairs)
     ;;
