@@ -319,6 +319,13 @@ ${UNOWNED_INSTRUCTION}"
     ctx="${SESSION_LINE}
 ${UNOWNED_INSTRUCTION}"
   fi
+  # No owned anchor: only the context-size nudge applies.
+  step_n=; step_m=; anchor_age_h=0; anchor_len=0
+  build_nudges
+  if [ -n "$nudges" ]; then
+    ctx="${ctx}
+${nudges}"
+  fi
   emit_json "$ctx"
   exit 0
 fi
@@ -326,7 +333,20 @@ fi
 # Legacy flat file — v1 path, unchanged behaviour
 anchor_file="$legacy_file"
 if [ ! -s "$anchor_file" ]; then
-  [ -n "$session_id" ] && emit_json "$SESSION_LINE"
+  # No anchor dir and no legacy file: still hand Claude the claim instruction and the context nudge.
+  if [ -n "$session_id" ]; then
+    ctx="${SESSION_LINE}
+${UNOWNED_INSTRUCTION}"
+  else
+    ctx="${UNOWNED_INSTRUCTION}"
+  fi
+  step_n=; step_m=; anchor_age_h=0; anchor_len=0
+  build_nudges
+  if [ -n "$nudges" ]; then
+    ctx="${ctx}
+${nudges}"
+  fi
+  emit_json "$ctx"
   exit 0
 fi
 anchor=$(head -c 2500 "$anchor_file")
