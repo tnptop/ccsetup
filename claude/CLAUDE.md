@@ -26,7 +26,7 @@ In plan mode: no implementation, even if I approve verbally. Only exit-plan-mode
 
 # Approval Rules
 
-Destructive git commands (git push, reset --hard, clean, branch -D, checkout/restore `.`) are blocked by `~/.claude/hooks/block-dangerous-git.sh` and by `permissions.deny` rules in `~/.claude/settings.json`.
+Destructive git commands (git push, reset --hard, clean, branch -D, checkout/restore `.`) are blocked by `~/.claude/hooks/block-dangerous-git.sh` and by `permissions.deny` rules in `~/.claude/settings.json`. On the org account, neither layer enforces (org managed settings set `allowManagedHooksOnly` and `allowManagedPermissionRulesOnly`) — there, this rule is on you, Claude: never run the blocked patterns; anything destructive or remote-touching needs my explicit approval first.
 
 Beyond the hook: `git commit`, `rebase`, `merge`, `stash drop`, deleting files, and anything touching remote state require my explicit approval. Reversible edits that follow from my request proceed without re-asking. When I ask for opinion or analysis, report — don't change anything. When in doubt, ask.
 
@@ -37,6 +37,8 @@ To commit: list unstaged files, propose which to stage, stage them, then draft t
 # Task Anchor
 
 A UserPromptSubmit hook (`~/.claude/hooks/task-anchor.sh`) injects the declared task from `~/.claude/task-anchors/<cwd-slug>/` into every prompt, together with the claim, sidetrack, and park instructions; follow them. When a prompt diverges from the anchor, flag the possible sidetrack in one line and ask: park it or switch the anchor?
+
+Hook-disabled fallback (org managed settings set `allowManagedHooksOnly`; detectable by the absence of any TASK ANCHOR / anchor-instruction block in my prompts): on your first turn of the session, derive the slug from the cwd (replace every character that is not A-Za-z0-9 with `-`), then read `~/.claude/task-anchors/<slug>/` (task files with `owner:`/`heartbeat:` claim fields; skip INDEX.md) or the legacy `~/.claude/task-anchors/<slug>.md`, and apply the same anchor rules for the rest of the session. When you claim or work a task in this mode, rewrite its `heartbeat:` line to the current ISO time at each checkpoint — other sessions use it to detect stale leases (≥4h = stale). Re-check the anchor whenever I declare, switch, or finish a task. When a prompt diverges from that anchor, flag the possible sidetrack in one line and ask: park it or switch the anchor? When I declare or finish a task, update the anchor file (one line: task + step state); delete it when no task is active.
 
 Closing turns (LR 0015): while this session owns an ACTIVE anchor, any turn that ends the work — hand-off, context cap, day end, "open a fresh session" — ends with the literal command as its next action: `/park`, `/park next`, `/park switch <task>`, or `/park closed`. Never "open a fresh session" or "start a new session" in that slot. Never write "parked", "anchor updated", or "the anchor points there" in prose unless `/park` ran in this session — a closing message that reads like a park is not a park, and no hook can catch a session that ends by silence.
 
