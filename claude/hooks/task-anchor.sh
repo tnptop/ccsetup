@@ -258,6 +258,20 @@ if [ -d "$anchor_dir" ]; then
   done
 
   if [ -n "$owned_file" ]; then
+    # Park guard (office hours 2026-09-26): a slash command typed mid-sentence is prose —
+    # the CLI never runs it and the model imitates the park by hand. Block the prompt
+    # (exit 2 = erased, stderr shown) so the user re-sends /park as its own message.
+    # Only while this session owns a claim; a /park inside backticks is not matched.
+    prompt=$(printf '%s' "$input" | jq -r '.prompt // empty' 2>/dev/null)
+    case "$prompt" in
+      /*) ;;
+      *)
+        if printf '%s' "$prompt" | grep -Eq '(^|[[:space:]])/park([[:space:]]|$)'; then
+          printf '%s\n' "NOT SENT — /park only runs as the first character of a message; typed mid-sentence it is prose and the skill never runs." "Send the note first, then /park <flavor> alone. Your message was:" "$prompt" >&2
+          exit 2
+        fi
+        ;;
+    esac
     rewrite_heartbeat "$owned_file" "$(iso_now)"
     anchor=$(head -c 2500 "$owned_file")
     line1=$(head -1 "$owned_file")
