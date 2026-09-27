@@ -125,5 +125,39 @@
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
   "autoCompactEnabled": false,
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "autoMode": {
+    "soft_deny": [
+      "$defaults",
+      "Bash(rm:*) targeting data/kb/ (operative knowledge base \u2014 requires DMC sign-off per README, treat mutation as sensitive)",
+      "Writes to files matching *sa.json, *token*.json, or *inventory.sqlite (credential/token material per .env.example custody notes)"
+    ],
+    "environment": [
+      "### Org-wide",
+      "**Organization**: tripetch-isuzu (GitLab group; from origin remote gitlab.com:tripetch-isuzu/skynet/fb-ads-improvement.git)",
+      "**Cloud provider(s)**: Google Cloud (Vertex AI, project set via GOOGLE_CLOUD_PROJECT) and Facebook Graph API \u2014 from .env.example",
+      "**Repository visibility**: assume private unless the remote host and repo name indicate otherwise, or a visibility check in the transcript shows public (gh visibility check not queryable here \u2014 org/repo not derivable in a supported form)",
+      "**Internal sharing / snippet hosting**: None configured \u2014 treat public paste/gist services as outside the trust boundary",
+      "**Secrets management**: Local files outside the repo (GCP service-account key, FB long-lived token JSON, Graph inventory sqlite) \u2014 kept outside repo, chmod 600, per .env.example custody notes; .env and .env.* gitignored (except .env.example)",
+      "**Default / protected branches**: main (default branch; protection status not queryable here \u2014 gh visibility/branch-protection check unavailable for this remote)",
+      "**CI/CD deploy targets**: None configured",
+      "**Network posture**: Optional telemetry egress to app.phoenix.arize.com (Phoenix/OTel tracing) when PHOENIX_COLLECTOR_ENDPOINT is set \u2014 off by default per .env.example",
+      "**Source control**: GitLab \u2014 origin at gitlab.com:tripetch-isuzu/skynet/fb-ads-improvement.git (glab CLI used routinely, 79\u00d7 in this project)",
+      "**Trusted internal domains**: None configured",
+      "**Trusted cloud buckets**: None configured",
+      "**Key internal services**: app.phoenix.arize.com (Phoenix tracing endpoint, optional/opt-in per .env.example)",
+      "**Internal package registry**: None configured",
+      "**Sensitive data locations & audiences**: GCP service-account key and FB user long-lived token JSON (paths outside repo, chmod 600); local Graph inventory sqlite containing page tokens (SNAPSHOT_GRAPH_DB, outside repo); data/kb/ knowledge base requires DMC sign-off before changes are operative; share only with audiences cleared at the DMC/team bar",
+      "**Data retention / declassification**: None configured",
+      "**Sensitive remote targets**: any namespace, host, or container whose name carries prod or production as a whole word or name segment",
+      "**Protected deployment namespaces / environments**: None configured \u2014 fall back to the Sensitive remote targets heuristic",
+      "**Protected IaC scopes**: IAM, RBAC, networking, quota, and node-pool resources; anything whose name or tag carries prod or production as a whole word or name segment",
+      "### User-specific",
+      "**Primary use of Claude Code**: software development (compliance-checker pipeline for Facebook ads, Isuzu dealer network)",
+      "**Trusted repo**: /Users/thanapbh/workspace/tripetch/skynet/fb-ads-improvement and its origin remote (gitlab.com:tripetch-isuzu/skynet/fb-ads-improvement.git)",
+      "**Org-specific CLIs**: glab (GitLab CLI, used routinely \u2014 79\u00d7 in this project), uv (Python toolchain, 79\u00d7)",
+      "**Routine under repo prefix**: routine read/write/lint/test operations under this repo's working tree (src/, data/samples/, docs/) \u2014 data/kb/ changes require DMC sign-off per README; data/local/uat36/ is untracked/disposable fixture data",
+      "**Trusted internal hosts**: 172.30.120.93 port 2222 (DGX Spark shared GPU box, ssh user thanapbh, read-only monitoring and HF cache inspection are routine)"
+    ]
+  }
 }
