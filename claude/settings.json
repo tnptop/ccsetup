@@ -93,6 +93,17 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/keep-display-awake.sh",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
@@ -104,7 +115,7 @@
     "figma@claude-plugins-official": false,
     "frontend-design@claude-plugins-official": true,
     "codex@openai-codex": true,
-    "warp@claude-code-warp": true
+    "warp@claude-code-warp": false
   },
   "extraKnownMarketplaces": {
     "openai-codex": {
