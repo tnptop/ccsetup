@@ -15,7 +15,7 @@ commit, and push.
 | `claude/settings.json` | `~/.claude/settings.json` | Machine-specific `autoMode.environment` is stripped |
 | `claude/hooks/` | `~/.claude/hooks/` | Both hooks need `jq` |
 | `claude/statusline-command.sh` | `~/.claude/statusline-command.sh` | Needs `jq` |
-| `claude/agents/*.md` | `~/.claude/agents/*.md` | `cursor-worker.md` is copied only when `cursor-agent` is on PATH |
+| `claude/agents/*.md` | `~/.claude/agents/*.md` | All agents are copied |
 | `claude/skills/{park,claim-task,promote-to-shared}` | `~/.claude/skills/...` | Hand-written skills that live in `~/.claude/skills` |
 | `dot-agents/skills/` | `~/.agents/skills/` | Skills installed with the `skills` CLI, plus 4 hand-written ones. `~/.claude/skills/<name>` gets a relative symlink to each |
 | `dot-agents/.skill-lock.json` | `~/.agents/.skill-lock.json` | Lets `npx skills update` keep working |

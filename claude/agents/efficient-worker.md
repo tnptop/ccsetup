@@ -1,6 +1,6 @@
 ---
 name: efficient-worker
-description: Use for formatting, extraction, uploads, renumbering, batches of ≥5 homogeneous operations, and tests-only additions that follow existing patterns. Production code plus its tests goes to cursor-worker. Runs on sonnet; override the spawn to haiku only when the spec is exact (literal strings or schema given, zero judgment) and verification is mechanical. Execute efficiently. Tiebreaker: if the task requires judgment — reading a spec to make a choice, or interpreting ambiguous live state as it runs — it's not mine. Spec-shaped work routes to cursor-worker; live-state judgment to jack-of-all-trades.
+description: Use for formatting, extraction, uploads, renumbering, batches of ≥5 homogeneous operations, and tests-only additions that follow existing patterns. Production code plus its tests goes to claude-implementer. Runs on sonnet; override the spawn to haiku only when the spec is exact (literal strings or schema given, zero judgment) and verification is mechanical. Execute efficiently. Tiebreaker: if the task requires judgment — reading a spec to make a choice, or interpreting ambiguous live state as it runs — it's not mine. Spec-shaped work routes to claude-implementer; live-state judgment to jack-of-all-trades.
 model: sonnet
 ---
 

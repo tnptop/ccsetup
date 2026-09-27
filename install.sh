@@ -67,10 +67,6 @@ pairs() {
   local f n d
   for f in "$REPO"/claude/agents/*.md; do
     n=$(basename "$f")
-    if [ "$n" = cursor-worker.md ] && ! command -v cursor-agent >/dev/null 2>&1; then
-      log "  skip $CLAUDE/agents/$n (cursor-agent not on PATH)" >&2
-      continue
-    fi
     echo "claude/agents/$n|$CLAUDE/agents/$n"
   done
   for d in "$REPO"/claude/skills/*/; do

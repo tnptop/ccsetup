@@ -54,7 +54,7 @@ Before implementing in a technology or high-stakes subject domain (money, regula
 
 Main conversation only; subagents follow their own task instructions.
 
-Plan, delegate, synthesize. Direct implementation is capped at 2 files / ~50 lines per task; beyond the cap — and for everything delegable after the first context compaction — delegate. Route by the agent descriptions; never spawn a default agent when a named route fits. If a routed worker is unavailable or fails mid-task, respawn the task on its sibling route (cursor-worker ↔ claude-implementer); only if no sibling route exists, say so and ask. Worker failure is a routing event — the main session never absorbs the work.
+Plan, delegate, synthesize. Direct implementation is capped at 2 files / ~50 lines per task; beyond the cap — and for everything delegable after the first context compaction — delegate. Route by the agent descriptions; never spawn a default agent when a named route fits. If a routed worker is unavailable or fails mid-task, respawn the task on its sibling route (claude-implementer ↔ claude-implementer-opus); only if no sibling route exists, say so and ask. Worker failure is a routing event — the main session never absorbs the work.
 
 Delegation prompts are self-contained: restate every in-scope spec item verbatim in the prompt body — never by reference number or "see §N items 1–3". One numbering scheme per prompt; if the spec document has its own numbering, use that one and no other. Scope exclusions name files or functions, never item numbers. Pointing workers at a spec for context is fine; the scope boundary itself must be interpretable from the prompt alone.
 
