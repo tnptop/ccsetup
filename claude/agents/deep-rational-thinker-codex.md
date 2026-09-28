@@ -45,17 +45,17 @@ Run from the project root, read-only, in the **foreground** with a generous time
 
 ```bash
 OUT="$SCRATCH/codex-last.md"; LOG="$SCRATCH/codex-run.log"
+MCP_OFF=(); for s in figma node_repl; do grep -q "^\[mcp_servers\.$s\]" ~/.codex/config.toml 2>/dev/null && MCP_OFF+=(-c "mcp_servers.$s.enabled=false"); done
 "$CODEX_BIN" exec \
   -m gpt-6-astra -c model_reasoning_effort="high" \
   -s read-only -C "<project root>" --skip-git-repo-check \
-  -c suppress_unstable_features_warning=true \
-  -c mcp_servers.figma.enabled=false -c mcp_servers.node_repl.enabled=false \
+  -c suppress_unstable_features_warning=true "${MCP_OFF[@]}" \
   --color never -o "$OUT" - < "$SCRATCH/prompt.md" > "$LOG" 2>&1
 echo "exit=$?"; grep -m1 'session id:' "$LOG"; grep -m1 'reasoning effort:' "$LOG"
 ```
 
 - `-s read-only` structurally enforces "recommend, don't apply". Never raise the sandbox level.
-- The MCP disables cut startup time and a known Figma auth error; they are not needed for reasoning.
+- The MCP disables cut startup time and a known Figma auth error; they are not needed for reasoning. `MCP_OFF` adds a disable flag only for a server defined in `~/.codex/config.toml`: disabling an undefined server fails with `invalid transport`.
 - Use `run_in_background` only when a run is expected to exceed the timeout, then poll `$LOG`; if it is unchanged for 3 minutes with no live `codex` process, the run is dead — report the failure, never wait on it.
 - Ignore `hook: Stop Failed` and `rmcp ... AuthorizationRequired` lines in the log; they are host-side noise, not a model failure.
 - If the log shows `requires a newer version of Codex`, the PATH binary is stale: rerun with the bundled binary and say so in the report.
@@ -70,9 +70,9 @@ echo "exit=$?"; grep -m1 'session id:' "$LOG"; grep -m1 'reasoning effort:' "$LO
 Your final message is Codex's four-section answer, relayed verbatim, followed by one line of run metadata: binary path and version, model, reasoning effort, session id, wall time. Do not add your own analysis, agreement, or hedging — the orchestrator wants Codex's independent view, not yours. If the orchestrator sends a follow-up question, prefer resuming over a fresh run so Codex keeps its context. `exec resume` does **not** accept `-s` or `--color`; without the `sandbox_mode` override below it silently falls back to the config default (`danger-full-access`), so always pass it:
 
 ```bash
+# Shell state does not persist between calls: rebuild MCP_OFF with the same line as in step 3 first.
 "$CODEX_BIN" exec resume <session id> --skip-git-repo-check \
-  -c sandbox_mode="read-only" -c suppress_unstable_features_warning=true \
-  -c mcp_servers.figma.enabled=false -c mcp_servers.node_repl.enabled=false \
+  -c sandbox_mode="read-only" -c suppress_unstable_features_warning=true "${MCP_OFF[@]}" \
   -o "$OUT" '<follow-up prompt>' > "$LOG" 2>&1
 grep -m1 'sandbox:' "$LOG"   # must say read-only; abort and report if it does not
 ```
