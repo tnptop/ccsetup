@@ -85,8 +85,27 @@ How to work with a machine branch:
 
 ## Windows
 
-Not wired yet. `docs/2026-07-25-mac-to-windows-sync.md` is the last manual sync.
-Changes since then: task-anchor v2 (hook rewrite, `park` and `claim-task` skills, statusline),
-CLAUDE.md edits of 2026-08-26, `effortLevel: high`, `tui: fullscreen`, and the skills
-`archify`, `show-me`, `thermo-nuclear-code-quality-review`. Plan: an `install.ps1` that mirrors
-`install.sh` using junctions, with hooks running under Git Bash.
+The Windows machine was synced by hand on 2026-09-28. Its own state is on
+`machine/tgcru`: hook and status line commands through Git Bash, the
+`block-deletions.ps1` hook, and a smaller `.skill-lock.json`.
+`docs/2026-07-25-mac-to-windows-sync.md` describes the earlier manual sync.
+
+How the setup works on Windows:
+
+- Skills live in `~/.agents/skills`, which Codex also reads. Each
+  `~/.claude/skills/<name>` is a junction to that folder.
+- Hooks and the status line run under Git Bash
+  (`C:\Program Files\Git\bin\bash.exe`).
+- `.gitattributes` keeps `*.sh` files at LF line endings. With CRLF endings,
+  bash fails on them.
+
+`install.sh` does not run on Windows yet:
+
+- It needs `rsync`, and Git Bash does not include it.
+- In `--check`, the repo and home dates are empty, because `stat -f` means
+  something different in GNU `stat`.
+- In Git Bash, `ln -s` copies the folder unless
+  `MSYS=winsymlinks:nativestrict` is set.
+
+Plan: an `install.ps1` that mirrors `install.sh` using junctions, with hooks
+running under Git Bash.

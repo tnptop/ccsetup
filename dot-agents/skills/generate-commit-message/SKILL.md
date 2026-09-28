@@ -49,9 +49,13 @@ Human:
 5. Return the full commit message.
    - Present the final title and body in a fenced code block.
    - **Also copy the exact message to the clipboard** so it can be pasted without the fence or
-     markdown-indent artifacts: pipe the raw message (title + blank line + body, fence excluded) to
-     `pbcopy` via a quoted heredoc — `pbcopy <<'EOF' … EOF` — preserving the body's two-space indents
-     verbatim. (macOS `pbcopy`; skip only if it is unavailable.)
+     markdown-indent artifacts. Pass the raw message (title + blank line + body, fence excluded)
+     through a quoted heredoc or single-quoted here-string, preserving the body's two-space
+     indents verbatim. Use the first clipboard command that exists on this machine:
+     - macOS: `pbcopy`
+     - Windows: `clip.exe` (from Git Bash), else PowerShell `Set-Clipboard -Value @' … '@`
+     - Linux: `wl-copy`, else `xclip -selection clipboard`
+     If a command fails, try the next one once. If none works, say so and skip the copy.
    - Do not run `git commit`. Stop here and let the user commit.
 
 ## Quality Bar
