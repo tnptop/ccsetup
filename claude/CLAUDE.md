@@ -26,9 +26,11 @@ In plan mode: no implementation, even if I approve verbally. Only exit-plan-mode
 
 # Approval Rules
 
-Destructive git commands (git push, reset --hard, clean, branch -D, checkout/restore `.`) are blocked by `~/.claude/hooks/block-dangerous-git.sh` and by `permissions.deny` rules in `~/.claude/settings.json`.
+Destructive git commands (git push, reset --hard, clean, branch -D, checkout/restore `.`) are blocked by `~/.claude/hooks/block-dangerous-git.sh` and by `permissions.deny` rules in `~/.claude/settings.json`. Deletion commands (`rm`, `Remove-Item`, `del`, `git rm`, etc.) are blocked by `~/.claude/hooks/block-deletions.ps1` — do not attempt them.
 
-Beyond the hook: `git commit`, `rebase`, `merge`, `stash drop`, deleting files, and anything touching remote state require my explicit approval. Reversible edits that follow from my request proceed without re-asking. When I ask for opinion or analysis, report — don't change anything. When in doubt, ask.
+When a deletion is blocked: stop, don't retry with different phrasing or a different tool/API to route around it. Tell me exactly what you were trying to delete and why, then let me delete it myself. Do not treat the block as a puzzle to solve.
+
+Beyond the hooks: `git commit`, `rebase`, `merge`, `stash drop`, and anything touching remote state require my explicit approval. Reversible edits that follow from my request proceed without re-asking. When I ask for opinion or analysis, report — don't change anything. When in doubt, ask.
 
 # Committing
 

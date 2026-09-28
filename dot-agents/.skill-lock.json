@@ -316,31 +316,12 @@
       "installedAt": "2026-06-25T15:32:34.553Z",
       "updatedAt": "2026-07-09T04:01:50.791Z"
     },
-    "code-review": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "sourceUrl": "https://github.com/mattpocock/skills.git",
-      "skillPath": "skills/engineering/code-review/SKILL.md",
-      "skillFolderHash": "9df6fdac9c49f20944411ee45e1582e718d9a657",
-      "pluginName": "mattpocock-skills",
-      "installedAt": "2026-07-02T05:31:46.031Z",
-      "updatedAt": "2026-07-09T04:01:50.771Z"
-    },
     "migrate-to-shoehorn": {
       "source": "mattpocock/skills",
       "sourceType": "github",
       "sourceUrl": "https://github.com/mattpocock/skills.git",
       "skillPath": "skills/misc/migrate-to-shoehorn/SKILL.md",
       "skillFolderHash": "ad722b79beb1c1fb998678d498ba11760d53714b",
-      "installedAt": "2026-07-02T05:31:46.043Z",
-      "updatedAt": "2026-07-09T04:01:50.787Z"
-    },
-    "obsidian-vault": {
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "sourceUrl": "https://github.com/mattpocock/skills.git",
-      "skillPath": "skills/personal/obsidian-vault/SKILL.md",
-      "skillFolderHash": "1e814d168a215762391895aee58f4de06c8e3b7f",
       "installedAt": "2026-07-02T05:31:46.043Z",
       "updatedAt": "2026-07-09T04:01:50.787Z"
     },
@@ -420,24 +401,6 @@
       "installedAt": "2026-07-09T04:01:50.785Z",
       "updatedAt": "2026-07-09T04:01:50.785Z"
     },
-    "microsoft-foundry": {
-      "source": "microsoft/azure-skills",
-      "sourceType": "github",
-      "sourceUrl": "https://github.com/microsoft/azure-skills.git",
-      "skillPath": ".github/plugins/azure-skills/skills/microsoft-foundry/SKILL.md",
-      "skillFolderHash": "db2beb5e19cee8d5b0def28eb7ea2b1d67faf33b",
-      "installedAt": "2026-08-04T10:25:08.859Z",
-      "updatedAt": "2026-08-04T10:25:08.859Z"
-    },
-    "show-me": {
-      "source": "humanlayer/skills",
-      "sourceType": "github",
-      "sourceUrl": "https://github.com/humanlayer/skills.git",
-      "skillPath": "plugins/show-me/skills/show-me/SKILL.md",
-      "skillFolderHash": "a8eda6381157e27b067400b46cdf395da68b8670",
-      "installedAt": "2026-08-13T04:04:54.655Z",
-      "updatedAt": "2026-08-13T04:04:54.655Z"
-    },
     "thermo-nuclear-code-quality-review": {
       "source": "cursor/plugins",
       "sourceType": "github",
@@ -446,15 +409,6 @@
       "skillFolderHash": "d9c8935dd560b3b6f5941247d04a1843f8c7cc35",
       "installedAt": "2026-08-25T12:41:15.315Z",
       "updatedAt": "2026-08-25T12:41:15.315Z"
-    },
-    "archify": {
-      "source": "tt-a1i/archify",
-      "sourceType": "github",
-      "sourceUrl": "https://github.com/tt-a1i/archify.git",
-      "skillPath": "archify/SKILL.md",
-      "skillFolderHash": "428ec4aaf7c87f172fc6ee15a78f52f2fafdb2d9",
-      "installedAt": "2026-08-30T02:22:20.466Z",
-      "updatedAt": "2026-08-30T02:22:20.466Z"
     },
     "typesafe-ai": {
       "source": "typesafe-ai/skills",
