@@ -53,7 +53,7 @@ CLOSED → before deleting the file, run the close ritual:
 - Task file has a `worktree:` line: run `git worktree remove <path>`. If git refuses because the worktree is dirty, list the dirty files (`git -C <path> status --short`) and ask the user "remove anyway (--force) or keep?" — never pass `--force` without that answer. If the worktree was on a named branch (not detached) and `git merge-base --is-ancestor <branch> main` succeeds, run `git branch -d <branch>`; otherwise report the branch name as kept.
 - Task file has no `worktree:` line but the session is inside an EnterWorktree lane (cwd under `.claude/worktrees/`): call `ExitWorktree(action="remove")` — it refuses on dirty state; if it refuses, ask the user the same "remove anyway (--force) or keep?" question. Then delete the matching `- <slug> | LANE | …` pointer row from the origin repo's INDEX.md (origin cwd = the repo root two levels above `.claude/worktrees/<name>`).
 
-Then delete the task file (`rm "$file"`). Do not run the release sed and do not rewrite line 1 — a CLOSED task has no file. Never leave a file whose line 1 says CLOSED.
+Then delete the task file (`rm "${file:?}"`). Do not run the release sed and do not rewrite line 1 — a CLOSED task has no file. Never leave a file whose line 1 says CLOSED.
 
 ### 3b. INDEX.md
 Set `slug` to the task file's basename without `.md`. Update that task's row to `- <slug> | <PARKED|ACTIVE> | next: <same next as the STATE line>` (TOMORROW and NEXT → PARKED; SWITCH previous → PARKED). If the row is missing, append it.
