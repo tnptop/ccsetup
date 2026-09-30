@@ -65,7 +65,7 @@ If confirmed: run §8 Claim write (it overwrites any existing `owner:` / `heartb
 Set `dir`, `slug`, `session_id`, `file="$dir/$slug.md"`, then run as-is (macOS bash; GNU/BSD `sed -i` split matches the hook's `rewrite_heartbeat`):
 
 ```bash
-if ! mkdir "$dir/$slug.lock"; then
+if ! mkdir "${dir:?}/${slug:?}.lock"; then
   echo "another session is claiming this right now"
   # STOP — do not edit the task file
 else
@@ -78,7 +78,7 @@ else
   fi
   printf 'owner: %s\n' "$session_id" >> "$file"
   printf 'heartbeat: %s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" >> "$file"
-  rmdir "$dir/$slug.lock"
+  rmdir "${dir:?}/${slug:?}.lock"
 fi
 ```
 
