@@ -1,6 +1,6 @@
 ---
 name: claude-implementer
-description: Sonnet implementation worker for small, design-decided changes: fixes and features that touch at most 2 files, review-finding rounds, and doc edits under 200 lines, with no port and no refactor. Cheap route; claude-implementer-opus is the default for everything larger. Sibling of claude-implementer-opus.
+description: Sonnet implementation worker for small, design-decided changes - fixes and features that touch at most 2 files, review-finding rounds, and doc edits under 200 lines, with no port and no refactor. Cheap route; claude-implementer-opus is the default for everything larger. Sibling of claude-implementer-opus.
 model: sonnet
 ---
 
