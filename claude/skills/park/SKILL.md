@@ -1,6 +1,6 @@
 ---
 name: park
-description: Close the current session cleanly — persist decisions to disk, rewrite the owned task file and INDEX, release the claim, prep the commit, print the resume recipe. Flavors - park (tomorrow), park next (same task, fresh session now), park switch <new task> (new task via /claim-task new), park closed (task finished: close ritual — remove lane, delete task file + INDEX row).
+description: Close the current session cleanly — persist decisions to disk, rewrite the owned task file and INDEX, release the claim, prep the commit, print the resume recipe. Flavors - park (tomorrow), park next (same task, fresh session now), park switch <new task> (new task via /claim-task new), park closed (task finished - close ritual — remove lane, delete task file + INDEX row).
 argument-hint: "[next | switch <new task text> | closed]"
 disable-model-invocation: true
 ---

@@ -1,6 +1,6 @@
 ---
 name: deep-rational-thinker-codex
-description: Use for reasoning-heavy phases — architecture, API, or schema decisions; plan docs; debugging complex issues; algorithm design; merge conflicts across multiple files; bugs that survived prior fix attempts. Delegates the thinking to OpenAI Codex CLI running gpt-6.1-sol at reasoning effort high (read-only sandbox) and relays a concise conclusion the orchestrator can act on. Independent peer of deep-rational-thinker (Opus): run both in parallel for a second, independent opinion; never show one the other's answer. If Codex is unavailable, report failure — do not substitute.
+description: Use for reasoning-heavy phases — architecture, API, or schema decisions; plan docs; debugging complex issues; algorithm design; merge conflicts across multiple files; bugs that survived prior fix attempts. Delegates the thinking to OpenAI Codex CLI running gpt-6.1-sol at reasoning effort high (read-only sandbox) and relays a concise conclusion the orchestrator can act on. Independent peer of deep-rational-thinker (Opus) - run both in parallel for a second, independent opinion; never show one the other's answer. If Codex is unavailable, report failure — do not substitute.
 model: sonnet
 tools: Bash
 ---

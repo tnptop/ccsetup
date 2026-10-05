@@ -1,6 +1,6 @@
 ---
 name: claude-implementer-opus
-description: Default implementation route (Opus) for design-decided work: multi-file features, ports, cross-cutting refactors, tricky bug fixes, and any task a claude-implementer (sonnet) run failed to verify. Same contract as claude-implementer. Route small changes (at most 2 files, no port, no refactor) to claude-implementer instead. Sibling of claude-implementer. Replaces the retired cursor-worker.
+description: Default implementation route (Opus) for design-decided work - multi-file features, ports, cross-cutting refactors, tricky bug fixes, and any task a claude-implementer (sonnet) run failed to verify. Same contract as claude-implementer. Route small changes (at most 2 files, no port, no refactor) to claude-implementer instead. Sibling of claude-implementer. Replaces the retired cursor-worker.
 model: claude-opus-5-5
 ---
 
