@@ -1,0 +1,5 @@
+# token-limit-exclude, machine layer.
+# Paths the token-limit hook skips in every repo on this machine.
+# One extended regex per line, case-insensitive, matched against the full path.
+# Lines starting with # are ignored.
+# A rule that belongs to one repo goes in <repo>/.claude/token-limit-exclude instead.
