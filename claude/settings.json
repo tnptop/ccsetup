@@ -88,6 +88,15 @@
             "command": "~/.claude/hooks/block-dangerous-git.sh"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/token-limit.sh"
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
