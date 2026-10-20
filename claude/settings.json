@@ -197,5 +197,6 @@
       "**Routine under repo prefix**: routine read/write/lint/test operations under this repo's working tree (src/, data/samples/, docs/) — data/kb/ changes require DMC sign-off per README; data/local/uat36/ is untracked/disposable fixture data",
       "**Trusted internal hosts**: 172.30.120.93 port 2222 (DGX Spark shared GPU box, ssh user thanapbh, read-only monitoring and HF cache inspection are routine)"
     ]
-  }
+  },
+  "cleanupPeriodDays": 365
 }
