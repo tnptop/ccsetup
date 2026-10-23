@@ -118,6 +118,50 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "^(clear|compact|resume)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh view",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "^(clear|compact)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh last",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   },
   "statusLine": {

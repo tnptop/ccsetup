@@ -22,6 +22,7 @@ Run before argument handling.
 
 ## 3. Lease
 Live-claimed = has an `owner:` line AND a `heartbeat:` line less than 4 hours old (whole hours, same rule as the hook). Otherwise free (no owner, or heartbeat stale/missing). Age label: first 8 chars of owner, `<N>h ago`.
+If `~/.claude/lanes/<cwd-slug>/` exists, live-claimed = an `owner:` line AND a `pid:` line whose process is alive (`kill -0 <pid>` works and the first word of `ps -p <pid> -o args=`, path stripped, is `claude` or `omp`); heartbeat age does not count. Age label: first 8 chars of owner, `pid <pid> live`.
 
 ## 4. No argument
 AskUserQuestion. Options = INDEX rows, newest first by STATE date, max 3 shown. Label each `<slug> — <status> — next: <...>`. Live-claimed rows append `claimed by <owner first 8 chars>, <N>h ago`. Always include an Other / free-text option so the user can type a slug or new task text.
@@ -41,7 +42,7 @@ Else (free, stale, or already owned by this session): run §8 Claim write, then 
 Derive a kebab-case slug from the text: first 5 words, lowercase, characters `a-z0-9-` only (other chars → `-`, collapse repeats). If `<dir>/<slug>.md` already exists, append `-2`, `-3`, … until unique.
 
 **Lane check** (runs before the task file is written):
-a. Check every OTHER row in INDEX.md: live-claimed = has an `owner:` line AND a `heartbeat:` line less than 4 hours old (whole hours, same rule as the hook).
+a. Check every OTHER row in INDEX.md with the §3 Lease rule: live-claimed and age label as there (pid liveness when `~/.claude/lanes/<cwd-slug>/` exists, else heartbeat under 4 hours).
 b. None live-claimed: proceed as today, no question.
 c. At least one live-claimed: ask the user ONE question naming the live task(s) (slug + age), with three options: "sandbox lane (review: session stays here, worktree at ../<repo>-<slug>)", "feature lane (EnterWorktree, session moves into .claude/worktrees/<slug>)", "no lane".
 d. Sandbox lane: `<ref>` = a branch, MR head, or commit the task text names; if it names none, ask the user for `<ref>` (default `origin/main` after `git fetch`). repo-basename = `basename "$(git rev-parse --show-toplevel)"`. Run `git worktree add --detach ../<repo-basename>-<slug> <ref>`. Once the task file below exists, add the line `worktree: <absolute path>` to it, after any `owner:`/`heartbeat:` lines. Continue the claim in the current cwd's anchor dir.
@@ -59,7 +60,7 @@ The skill creates lanes only via steps d and e above, and never removes them; re
 
 ## 7. `steal <slug>` argument
 Only proceed if the user already confirmed stealing in this conversation (choosing a live-claimed row in §4 counts). Otherwise refuse and ask the user to confirm first.
-If confirmed: run §8 Claim write (it overwrites any existing `owner:` / `heartbeat:` lines).
+If confirmed: run §8 Claim write (it overwrites any existing `owner:` / `heartbeat:` lines and deletes `pid:` and `last_session:`; the task-anchor hook writes the new `pid:` on the next prompt).
 
 ## 8. Claim write (atomic)
 Set `dir`, `slug`, `session_id`, `file="$dir/$slug.md"`, then run as-is (macOS bash; GNU/BSD `sed -i` split matches the hook's `rewrite_heartbeat`):
@@ -72,9 +73,13 @@ else
   if sed --version >/dev/null 2>&1; then
     sed -i '/^owner:/d' "$file"
     sed -i '/^heartbeat:/d' "$file"
+    sed -i '/^pid:/d' "$file"
+    sed -i '/^last_session:/d' "$file"
   else
     sed -i '' '/^owner:/d' "$file"
     sed -i '' '/^heartbeat:/d' "$file"
+    sed -i '' '/^pid:/d' "$file"
+    sed -i '' '/^last_session:/d' "$file"
   fi
   printf 'owner: %s\n' "$session_id" >> "$file"
   printf 'heartbeat: %s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" >> "$file"

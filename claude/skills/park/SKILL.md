@@ -14,6 +14,7 @@ If the dir exists but no file is owned by this session: print "no claimed task i
 Dir missing + legacy flat file: see Legacy at the end.
 Non-repo work (scratch dir, no worklog): use `/handoff` instead and say so.
 Live-claimed = has an `owner:` line AND a `heartbeat:` line less than 4 hours old (whole hours, same rule as the hook). Age label: first 8 chars of owner, `<N>h ago`.
+If `~/.claude/lanes/<cwd-slug>/` exists, live-claimed = an `owner:` line AND a `pid:` line whose process is alive (`kill -0 <pid>` works and the first word of `ps -p <pid> -o args=`, path stripped, is `claude` or `omp`); heartbeat age does not count. Age label: first 8 chars of owner, `pid <pid> live`.
 
 ## 1. Flavor check (before writing anything)
 Gather: target line 1, `git status --short`, open questions in this conversation, any background process or log path mentioned (LR 0009 rule), local time.
@@ -43,15 +44,18 @@ Then release the claim on EVERY flavor that keeps the file (TOMORROW, NEXT, SWIT
 if sed --version >/dev/null 2>&1; then
   sed -i '/^owner:/d' "$file"
   sed -i '/^heartbeat:/d' "$file"
+  sed -i '/^pid:/d' "$file"
 else
   sed -i '' '/^owner:/d' "$file"
   sed -i '' '/^heartbeat:/d' "$file"
+  sed -i '' '/^pid:/d' "$file"
 fi
 ```
 
 CLOSED → before deleting the file, run the close ritual:
 - Task file has a `worktree:` line: run `git worktree remove <path>`. If git refuses because the worktree is dirty, list the dirty files (`git -C <path> status --short`) and ask the user "remove anyway (--force) or keep?" — never pass `--force` without that answer. If the worktree was on a named branch (not detached) and `git merge-base --is-ancestor <branch> main` succeeds, run `git branch -d <branch>`; otherwise report the branch name as kept.
 - Task file has no `worktree:` line but the session is inside an EnterWorktree lane (cwd under `.claude/worktrees/`): call `ExitWorktree(action="remove")` — it refuses on dirty state; if it refuses, ask the user the same "remove anyway (--force) or keep?" question. Then delete the matching `- <slug> | LANE | …` pointer row from the origin repo's INDEX.md (origin cwd = the repo root two levels above `.claude/worktrees/<name>`).
+- `~/.claude/lanes/<cwd-slug>/` exists: append the outcome to the lane log (the tree is kept): `node "${LANE_TS:-$HOME/.claude/hooks/lanes/lane.ts}" close "<cwd>" "<slug>" "<outcome>"`.
 
 Then delete the task file (`rm "${file:?}"`). Do not run the release sed and do not rewrite line 1 — a CLOSED task has no file. Never leave a file whose line 1 says CLOSED.
 
