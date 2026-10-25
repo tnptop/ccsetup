@@ -17,15 +17,15 @@ Dir = `~/.claude/task-anchors/<cwd-slug>/`.
 
 ## 2. Migration
 Run before argument handling.
-- Dir missing, legacy flat file `~/.claude/task-anchors/<cwd-slug>.md` exists: create the dir, move that file's content as-is to `<dir>/<slug-derived-from-its-first-task-words>.md` (first 5 words of the task text / `next:` field → kebab-case `a-z0-9-`), create `INDEX.md` with one row for it (`- <slug> | <status from STATE> | next: <...>`), then continue.
-- Neither dir nor legacy file: `mkdir -p` the dir and write an empty `INDEX.md`.
+- Dir missing: `mkdir -p` the dir and write an empty `INDEX.md`.
 
 ## 3. Lease
-Live-claimed = has an `owner:` line AND a `heartbeat:` line less than 4 hours old (whole hours, same rule as the hook). Otherwise free (no owner, or heartbeat stale/missing). Age label: first 8 chars of owner, `<N>h ago`.
-If `~/.claude/lanes/<cwd-slug>/` exists, live-claimed = an `owner:` line AND a `pid:` line whose process is alive (`kill -0 <pid>` works and the first word of `ps -p <pid> -o args=`, path stripped, is `claude` or `omp`); heartbeat age does not count. Age label: first 8 chars of owner, `pid <pid> live`.
+Live-claimed = has an `owner:` line AND a live lease. Otherwise free (no owner, or lease not live).
+- Task file has a `pid:` line: live = `kill -0 <pid>` works and the first word of `ps -p <pid> -o args=` (path stripped) is `claude` or `omp` (same rule as the hook). Age label: first 8 chars of owner, `pid <pid> live`.
+- No `pid:` line: live = a `heartbeat:` line less than 4 hours old (whole hours). Age label: first 8 chars of owner, `<N>h ago`. This fallback exists only for the hook-disabled mode in CLAUDE.md, where no hook writes `pid:`.
 
 ## 4. No argument
-AskUserQuestion. Options = INDEX rows, newest first by STATE date, max 3 shown. Label each `<slug> — <status> — next: <...>`. Live-claimed rows append `claimed by <owner first 8 chars>, <N>h ago`. Always include an Other / free-text option so the user can type a slug or new task text.
+AskUserQuestion. Options = INDEX rows, newest first by STATE date, max 3 shown. Label each `<slug> — <status> — next: <...>`. When the row's lane has a built view, show the view's last line instead of the INDEX `next:` (the INDEX `next:` goes stale in Claude Code): `node "${LANE_TS:-$HOME/.claude/hooks/lanes/lane.ts}" inject view "<cwd>" "<slug>" | tail -1` (read-only; empty output = no view, keep the INDEX `next:`). Live-claimed rows append `claimed by <age label from §3>`. Always include an Other / free-text option so the user can type a slug or new task text.
 - Choosing a live-claimed row = explicit steal confirmation → §7.
 - Choosing a free/stale row (or this session already owns it) → §5.
 - Typed slug → §5; typed new task text → §6.
@@ -42,7 +42,7 @@ Else (free, stale, or already owned by this session): run §8 Claim write, then 
 Derive a kebab-case slug from the text: first 5 words, lowercase, characters `a-z0-9-` only (other chars → `-`, collapse repeats). If `<dir>/<slug>.md` already exists, append `-2`, `-3`, … until unique.
 
 **Lane check** (runs before the task file is written):
-a. Check every OTHER row in INDEX.md with the §3 Lease rule: live-claimed and age label as there (pid liveness when `~/.claude/lanes/<cwd-slug>/` exists, else heartbeat under 4 hours).
+a. Check every OTHER row in INDEX.md with the §3 Lease rule: live-claimed and age label as there.
 b. None live-claimed: proceed as today, no question.
 c. At least one live-claimed: ask the user ONE question naming the live task(s) (slug + age), with three options: "sandbox lane (review: session stays here, worktree at ../<repo>-<slug>)", "feature lane (EnterWorktree, session moves into .claude/worktrees/<slug>)", "no lane".
 d. Sandbox lane: `<ref>` = a branch, MR head, or commit the task text names; if it names none, ask the user for `<ref>` (default `origin/main` after `git fetch`). repo-basename = `basename "$(git rev-parse --show-toplevel)"`. Run `git worktree add --detach ../<repo-basename>-<slug> <ref>`. Once the task file below exists, add the line `worktree: <absolute path>` to it, after any `owner:`/`heartbeat:` lines. Continue the claim in the current cwd's anchor dir.
@@ -63,7 +63,7 @@ Only proceed if the user already confirmed stealing in this conversation (choosi
 If confirmed: run §8 Claim write (it overwrites any existing `owner:` / `heartbeat:` lines and deletes `pid:` and `last_session:`; the task-anchor hook writes the new `pid:` on the next prompt).
 
 ## 8. Claim write (atomic)
-Set `dir`, `slug`, `session_id`, `file="$dir/$slug.md"`, then run as-is (macOS bash; GNU/BSD `sed -i` split matches the hook's `rewrite_heartbeat`):
+Set `dir`, `slug`, `session_id`, `file="$dir/$slug.md"`, then run as-is (macOS bash; GNU/BSD `sed -i` split matches the hook's `rewrite_field`):
 
 ```bash
 if ! mkdir "${dir:?}/${slug:?}.lock"; then
@@ -87,7 +87,7 @@ else
 fi
 ```
 
-`date +%Y-%m-%dT%H:%M:%S%z` is the heartbeat format (offset with or without a colon; the hook's `parse_iso_datetime_epoch` accepts both). Lock is a directory; plain `mkdir` (not `-p`) fails if `<dir>/<slug>.lock` already exists.
+`date +%Y-%m-%dT%H:%M:%S%z` is the heartbeat format (offset with or without a colon; the §3 heartbeat fallback accepts both). Lock is a directory; plain `mkdir` (not `-p`) fails if `<dir>/<slug>.lock` already exists.
 
 ## 9. Close
 Every successful path ends here. Print one line: `Claimed <slug> | next: <...>`. Remind the user that `/park` releases the claim.

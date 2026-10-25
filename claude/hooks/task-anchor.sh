@@ -1,9 +1,8 @@
 #!/bin/bash
 # task-anchor: inject the declared task so Claude can flag sidetracks.
-# v1 (legacy): ~/.claude/task-anchors/<cwd-slug>.md
-# v2 (dir):    ~/.claude/task-anchors/<cwd-slug>/{INDEX.md,<task-slug>.md}
-# Lanes (uniichat lane design section 3): when ~/.claude/lanes/<cwd-slug>/
-# exists, also Stop, SessionEnd and SessionStart (arg view|last) call this.
+# Anchors: ~/.claude/task-anchors/<cwd-slug>/{INDEX.md,<task-slug>.md}
+# Lanes (uniichat lane design section 3): on in Claude Code; also Stop,
+# SessionEnd and SessionStart (arg view|last) call this.
 input=$(cat)
 event=$(printf '%s' "$input" | jq -r '.hook_event_name // empty' 2>/dev/null)
 # Key by project root, not .cwd: a Bash `cd` moves .cwd (lane design F5).
@@ -13,11 +12,11 @@ cwd="${CLAUDE_PROJECT_DIR:-}"
 slug=$(printf '%s' "$cwd" | sed 's/[^A-Za-z0-9]/-/g')
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
 anchor_dir="$HOME/.claude/task-anchors/$slug"
-legacy_file="$HOME/.claude/task-anchors/$slug.md"
 transcript_path=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null)
 lanes_dir="${LANES_ROOT:-$HOME/.claude/lanes}/$slug"
 LANE_TS="${LANE_TS:-$HOME/.claude/hooks/lanes/lane.ts}"
 
+# Lanes off (omp until its port, or no node): the old /park flavors.
 OWNED_INSTRUCTION='Compare this prompt against the anchor. If it diverges, say so in one line and ask: park it or switch the anchor? When the user declares a new task: read ~/.claude/skills/park/SKILL.md and run its switch flavor. When the task finishes: read ~/.claude/skills/park/SKILL.md and run its closed flavor (close ritual, delete task file, drop INDEX row). Never rewrite the STATE line to CLOSED by hand and never leave a task file whose line 1 says CLOSED.'
 # Lanes on: no /park next, /park or /park switch (design section 3); /clear
 # resets context and the lane comes back on its own.
@@ -27,27 +26,6 @@ UNOWNED_INSTRUCTION='No claimed task in this session. If the request matches a c
 
 iso_now() {
   date +%Y-%m-%dT%H:%M:%S%z | sed 's/\([+-][0-9][0-9]\)\([0-9][0-9]\)$/\1:\2/'
-}
-
-parse_iso_datetime_epoch() {
-  local val="$1" result= stripped=
-  [ -z "$val" ] && return
-  result=$(date -j -f "%Y-%m-%dT%H:%M:%S%z" "$val" +%s 2>/dev/null) || true
-  case "$result" in
-    ''|*[!0-9]*)
-      stripped=$(printf '%s' "$val" | sed 's/\([+-][0-9][0-9]\):\([0-9][0-9]\)$/\1\2/')
-      result=$(date -j -f "%Y-%m-%dT%H:%M:%S%z" "$stripped" +%s 2>/dev/null) || true
-      ;;
-  esac
-  case "$result" in
-    ''|*[!0-9]*)
-      result=$(date -d "$val" +%s 2>/dev/null) || true
-      ;;
-  esac
-  case "$result" in
-    ''|*[!0-9]*) ;;
-    *) printf '%s' "$result" ;;
-  esac
 }
 
 parse_iso_date_epoch() {
@@ -89,8 +67,6 @@ rewrite_field() {
   fi
 }
 
-rewrite_heartbeat() { rewrite_field "$1" heartbeat "$2"; }
-
 drop_field() {
   if sed --version >/dev/null 2>&1; then
     sed -i "/^$2:/d" "$1"
@@ -99,10 +75,10 @@ drop_field() {
   fi
 }
 
-# Lanes on: this project's lanes dir exists (the cutover switch), node runs
-# lane.ts, and not omp (its transcript is synthetic, usage-only).
+# Lanes on: Claude Code (not omp: its transcript is synthetic, usage-only)
+# and node runs lane.ts. lane_add makes the project's lanes dir.
 lanes_on() {
-  [ -d "$lanes_dir" ] && [ -z "${OMPCODE:-}" ] && command -v node >/dev/null 2>&1
+  [ -z "${OMPCODE:-}" ] && command -v node >/dev/null 2>&1
 }
 
 # A live harness: kill -0 works and the first word of args is claude or omp.
@@ -145,12 +121,6 @@ file_size_bytes() {
     ''|*[!0-9]*) anchor_len=0 ;;
   esac
   printf '%s' "$anchor_len"
-}
-
-file_mtime_epoch() {
-  local file="$1" mtime_epoch=
-  mtime_epoch=$(stat -f %m "$file" 2>/dev/null || stat -c %Y "$file" 2>/dev/null || true)
-  printf '%s' "$mtime_epoch"
 }
 
 hours_since() {
@@ -254,39 +224,19 @@ emit_json() {
 }
 
 claim_state_for() {
-  local file="$1" owner= hb= hb_epoch= age_h= owner8= pid=
+  local file="$1" owner= owner8= pid=
   owner=$(extract_field "$file" "owner")
   if [ -z "$owner" ]; then
     printf '%s' "free"
     return
   fi
   owner8=$(printf '%s' "$owner" | cut -c1-8)
-  # Lanes on: live = pid: is a live harness; heartbeat age does not count.
-  if lanes_on; then
-    pid=$(extract_field "$file" "pid")
-    if [ -n "$pid" ] && is_harness "$pid"; then
-      printf 'claimed by %s, pid %s live' "$owner8" "$pid"
-    else
-      printf 'stale (owner %s, no live pid)' "$owner8"
-    fi
-    return
-  fi
-  hb=$(extract_field "$file" "heartbeat")
-  hb_epoch=$(parse_iso_datetime_epoch "$hb")
-  case "$hb_epoch" in
-    ''|*[!0-9]*)
-      printf 'stale (owner %s, ?h ago)' "$owner8"
-      return
-      ;;
-  esac
-  age_h=$(hours_since "$hb_epoch")
-  case "$age_h" in
-    ''|*[!0-9]*) age_h=4 ;;
-  esac
-  if [ "$age_h" -ge 4 ]; then
-    printf 'stale (owner %s, %sh ago)' "$owner8" "$age_h"
+  # Live = pid: is a live harness; the heartbeat: line is not read.
+  pid=$(extract_field "$file" "pid")
+  if [ -n "$pid" ] && is_harness "$pid"; then
+    printf 'claimed by %s, pid %s live' "$owner8" "$pid"
   else
-    printf 'claimed by %s, %sh ago' "$owner8" "$age_h"
+    printf 'stale (owner %s, no live pid)' "$owner8"
   fi
 }
 
@@ -335,17 +285,17 @@ owned_task() {
 lane_add() {
   [ -n "$session_id" ] && [ -n "$transcript_path" ] || return 0
   grep -q "^${session_id}	" "$lanes_dir/$1/log" 2>/dev/null && return 0
+  mkdir -p "$lanes_dir"
   node "$LANE_TS" add "$cwd" "$1" "$session_id" "$transcript_path" >/dev/null 2>&1
 }
 
-# Stop (owned claim): refresh the lease, keep the last exchange (from the
+# Stop (owned claim): refresh the lease pid, keep the last exchange (from the
 # hook input: the transcript may not be flushed yet), start the build
 # detached, ask for /clear at 200k.
 on_stop() {
   local f= lane= d= pid= k=
   f=$(owned_task)
   [ -n "$f" ] || return 0
-  rewrite_heartbeat "$f" "$(iso_now)"
   pid=$(harness_pid)
   [ -n "$pid" ] && rewrite_field "$f" pid "$pid"
   lane=$(basename "$f" .md)
@@ -438,7 +388,6 @@ on_start() {
     view)
       mkdir "$anchor_dir/$lane.lock" 2>/dev/null || return 0
       rewrite_field "$f" owner "$session_id"
-      rewrite_heartbeat "$f" "$(iso_now)"
       pid=$(harness_pid)
       [ -n "$pid" ] && rewrite_field "$f" pid "$pid"
       rmdir "$anchor_dir/$lane.lock"
@@ -492,7 +441,6 @@ if [ -d "$anchor_dir" ]; then
         fi
         ;;
     esac
-    rewrite_heartbeat "$owned_file" "$(iso_now)"
     # Lease liveness key (lane design section 3): is_harness on this pid.
     pid=$(harness_pid)
     [ -n "$pid" ] && rewrite_field "$owned_file" pid "$pid"
@@ -560,48 +508,17 @@ ${nudges}"
   exit 0
 fi
 
-# Legacy flat file — v1 path, unchanged behaviour
-anchor_file="$legacy_file"
-if [ ! -s "$anchor_file" ]; then
-  # No anchor dir and no legacy file: still hand Claude the claim instruction and the context nudge.
-  if [ -n "$session_id" ]; then
-    ctx="${SESSION_LINE}
+# No anchor dir: still hand Claude the claim instruction and the context nudge.
+if [ -n "$session_id" ]; then
+  ctx="${SESSION_LINE}
 ${UNOWNED_INSTRUCTION}"
-  else
-    ctx="${UNOWNED_INSTRUCTION}"
-  fi
-  step_n=; step_m=; anchor_age_h=0; anchor_len=0
-  build_nudges
-  if [ -n "$nudges" ]; then
-    ctx="${ctx}
-${nudges}"
-  fi
-  emit_json "$ctx"
-  exit 0
+else
+  ctx="${UNOWNED_INSTRUCTION}"
 fi
-anchor=$(head -c 2500 "$anchor_file")
-
-mtime_epoch=$(file_mtime_epoch "$anchor_file")
-anchor_age_h=0
-case "$mtime_epoch" in
-  ''|*[!0-9]*) ;;
-  *) anchor_age_h=$(( (now_epoch - mtime_epoch) / 3600 )) ;;
-esac
-
-anchor_len=$(file_size_bytes "$anchor_file")
-
-step_n=
-step_m=
-line1=$(head -1 "$anchor_file")
-parse_step_from_line "$line1"
-
+step_n=; step_m=; anchor_age_h=0; anchor_len=0
 build_nudges
-
-ctx="DECLARED TASK ANCHOR ($anchor_file): $anchor
-${OWNED_INSTRUCTION}"
 if [ -n "$nudges" ]; then
   ctx="${ctx}
 ${nudges}"
 fi
-
 emit_json "$ctx"

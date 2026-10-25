@@ -206,7 +206,7 @@
   "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
-  "autoCompactEnabled": false,
+  "autoCompactEnabled": true,
   "agentPushNotifEnabled": true,
   "autoMode": {
     "soft_deny": [
@@ -242,5 +242,7 @@
       "**Trusted internal hosts**: 172.30.120.93 port 2222 (DGX Spark shared GPU box, ssh user thanapbh, read-only monitoring and HF cache inspection are routine)"
     ]
   },
-  "cleanupPeriodDays": 365
+  "cleanupPeriodDays": 365,
+  "autoCompactWindow": 250000,
+  "idleCompaction": false
 }

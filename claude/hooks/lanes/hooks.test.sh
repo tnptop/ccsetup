@@ -88,50 +88,56 @@ mask() { sed -E -e 's/heartbeat: [0-9T:+-]+/heartbeat: X/' -e 's/last written [0
 
 ups() { printf '{"hook_event_name":"UserPromptSubmit","session_id":"%s","prompt":"%s","cwd":"%s","transcript_path":"%s"}' "$1" "$2" "$P" "$3"; }
 
-# Test 1: golden. No lanes dir (and OMPCODE=1 with one): the prompt hook's
-# output and files match the live hook's; the lane events do nothing.
+# Test 1: golden. Lanes off (OMPCODE=1, with and without a lanes dir): the
+# prompt hook's output and files match the live hook's; the lane events do
+# nothing.
 golden() {
   local name=$1 setup=$2 json=$3 a= b= sa= sb=
   eval "$setup"
   a=$(run "$ORACLE" "$json" | mask); sa=$(snap)
   eval "$setup"
   b=$(run "$HOOK" "$json" | mask); sb=$(snap)
-  t "golden $name${OMPCODE:+ (OMPCODE=1)}" '[ -n "$a" ] && [ "$a" = "$b" ] && [ "$sa" = "$sb" ]' ||
+  t "golden $name (OMPCODE=1${lanes:+, lanes dir})" '[ -n "$a" ] && [ "$a" = "$b" ] && [ "$sa" = "$sb" ]' ||
     { [ -n "$DEBUG" ] && diff <(echo "$a"; echo "$sa") <(echo "$b"; echo "$sb"); }
 }
 
 quiet() {
   local name=$1 json=$2 arg=$3 before= out=
-  anchors S1
-  [ -n "$OMPCODE" ] && mkdir -p "$LD/t1"
+  eval "anchors S1$lanes"
   before=$(snap)
   out=$(run "$HOOK" "$json" $arg)
-  t "quiet $name${OMPCODE:+ (OMPCODE=1)}" '[ $? -eq 0 ] && [ -z "$out" ] && [ "$(snap)" = "$before" ]'
+  t "quiet $name (OMPCODE=1${lanes:+, lanes dir})" '[ $? -eq 0 ] && [ -z "$out" ] && [ "$(snap)" = "$before" ]'
 }
 
-for OMPCODE in "" 1; do
-  export OMPCODE
-  [ -z "$OMPCODE" ] && unset OMPCODE
-  lanes=
-  [ -n "$OMPCODE" ] && lanes='; mkdir -p "$LD/t1"'
+export OMPCODE=1
+for lanes in "" '; mkdir -p "$LD/t1"'; do
   golden "owned claim, 160k" "anchors S1$lanes" "$(ups S1 hello "$T160")"
   golden "unowned with INDEX" "anchors$lanes" "$(ups S9 hello "$T10")"
   golden "unowned, 160k" "anchors$lanes" "$(ups S9 hello "$T160")"
   golden "no anchor dir" "rm -rf \"\$tmp/home\" \"\$tmp/lanes\"; mkdir -p \"\$tmp/home\"$lanes" "$(ups S9 hello "$T10")"
-  golden "legacy file" "rm -rf \"\$tmp/home\" \"\$tmp/lanes\"; mkdir -p \"\$tmp/home/.claude/task-anchors\"; printf 'STATE 2026-10-20 | ACTIVE | next: a | step 1/3\nlegacy\n' > \"\$tmp/home/.claude/task-anchors/\$slug.md\"$lanes" "$(ups S9 hello "$T160")"
   quiet "Stop" "{\"hook_event_name\":\"Stop\",\"session_id\":\"S1\",\"transcript_path\":\"$T210\",\"last_assistant_message\":\"m\"}"
   quiet "SessionEnd" '{"hook_event_name":"SessionEnd","session_id":"S1","reason":"prompt_input_exit"}'
   quiet "SessionStart view" '{"hook_event_name":"SessionStart","session_id":"S2","source":"clear"}' view
   quiet "SessionStart last" '{"hook_event_name":"SessionStart","session_id":"S2","source":"clear"}' last
 done
+# omp reads leases by pid too: a fresh heartbeat with a dead pid is stale
+anchors
+sedi "s/^pid: .*/pid: $DEAD/" "$AD/t2.md"
+o=$(run "$HOOK" "$(ups S9 hi "$T10")" | jq -r .hookSpecificOutput.additionalContext)
+t "INDEX (OMPCODE=1): fresh heartbeat, dead pid reads stale" 'printf %s "$o" | grep -qF "t2 | ACTIVE | next: do y | stale (owner S0-other, no live pid)"'
 unset OMPCODE
 
-# Test 2: lanes on: the prompt hook logs the session once, keeps the prompt,
-# nudges at 200k (not 150k), and reads leases by pid
+# Test 2: lanes on (Claude Code, no lanes dir needed): a session with no
+# claim makes no lanes dir; the prompt hook makes it, logs the session once,
+# keeps the prompt, nudges at 200k (not 150k), and reads leases by pid
 T250="$tmp/t250.jsonl"; usage 1000 249000 0 "$T250"
+anchors
+run "$HOOK" "$(ups S9 hi "$T10")" >/dev/null
+run "$HOOK" "{\"hook_event_name\":\"Stop\",\"session_id\":\"S9\",\"transcript_path\":\"$T10\"}" >/dev/null
+t "no claim: no lanes dir made" '[ ! -e "$tmp/lanes" ]'
 anchors S1
-mkdir -p "$LD"
-run "$HOOK" "$(ups S1 first "$T160")" >/dev/null
+o=$(run "$HOOK" "$(ups S1 first "$T160")")
+t "owned claim, no lanes dir: lanes and lane dir made, lane instruction" '[ -d "$LD/t1" ] && printf %s "$o" | jq -r .hookSpecificOutput.additionalContext | grep -qF "(/claim-task there)"'
 o=$(run "$HOOK" "$(ups S1 second "$T160")")
 t "UserPromptSubmit twice: one log line" '[ "$(cat "$LD/t1/log")" = "$(printf "S1\t%s" "$T160")" ]'
 t "UserPromptSubmit: prompt file written" '[ "$(cat "$LD/t1/prompt")" = second ]'
@@ -164,7 +170,7 @@ out=$(STUB_MARKER="$tmp/marker" LANE_TS_T="$tmp/stub.js" CLAUDECODE=1 CLAUDE_COD
 rc=$?
 t1=$(now)
 t "Stop returns in under 1 s, exit 0, no output under 200k" '[ $rc -eq 0 ] && [ -z "$out" ] && perl -e "exit !($t1 - $t0 < 1)" && [ ! -e "$tmp/marker" ]'
-t "Stop refreshes pid and heartbeat" 'grep -qx "pid: $H" "$AD/t1.md" && ! grep -q "heartbeat: 2026-01-01" "$AD/t1.md"'
+t "Stop refreshes pid, leaves heartbeat" 'grep -qx "pid: $H" "$AD/t1.md" && grep -qx "heartbeat: 2026-01-01T00:00:00+07:00" "$AD/t1.md"'
 t "Stop writes last.json" 'jq -e --arg tp "$T160" ".prompt == \"my prompt\" and .message == \"reply: pick A or B\n\\\"quoted\\\" ไทย\" and .transcript == \$tp and (.date | test(\"^20\"))" "$LD/t1/last.json" >/dev/null && [ ! -e "$LD/t1/last.json.tmp" ] && ! ls "$LD/t1" | grep -q "last.json\."'
 for _ in $(seq 1 40); do [ -e "$tmp/marker" ] && break; sleep 0.25; done
 t "Stop's build runs detached, env cleared" '[ "$(cat "$tmp/marker" 2>/dev/null)" = "build $P t1|" ]'
@@ -178,12 +184,10 @@ t "Stop with no node in PATH: exit 0, quiet" '[ $rc -eq 0 ] && [ -z "$out" ]'
 
 # Test 4: SessionEnd releases the claim and keeps the session; clear does not
 anchors S1
-mkdir -p "$LD"
 before2=$(cat "$AD/t2.md")
 out=$(run "$HOOK" '{"hook_event_name":"SessionEnd","session_id":"S1","reason":"prompt_input_exit"}')
 t "SessionEnd prompt_input_exit releases, writes last_session" '[ -z "$out" ] && ! grep -Eq "^(owner|heartbeat|pid):" "$AD/t1.md" && grep -qx "last_session: S1" "$AD/t1.md" && [ "$(head -2 "$AD/t1.md")" = "$(printf "STATE 2026-10-20 | ACTIVE | next: do x | step 2/5\nprose one")" ] && [ "$(cat "$AD/t2.md")" = "$before2" ]'
 anchors S1
-mkdir -p "$LD"
 before=$(snap)
 out=$(run "$HOOK" '{"hook_event_name":"SessionEnd","session_id":"S1","reason":"clear"}')
 t "SessionEnd clear changes nothing" '[ -z "$out" ] && [ "$(snap)" = "$before" ]'
@@ -234,7 +238,6 @@ lanedata 2 2
 v=$(run "$HOOK" "$(start S1 resume)" view)
 t "SessionStart resume re-claims a released lane, prints nothing" '[ -z "$v" ] && grep -qx "owner: S1" "$AD/t1.md" && grep -qx "pid: $H" "$AD/t1.md"'
 anchors S1
-mkdir -p "$LD"
 sedi "s/^pid: .*/pid: $DEAD/" "$AD/t1.md"
 v=$(run "$HOOK" "$(start S1 resume)" view)
 t "SessionStart resume re-claims a crashed window's lane (dead pid)" '[ -z "$v" ] && grep -qx "owner: S1" "$AD/t1.md" && grep -qx "pid: $H" "$AD/t1.md"'
