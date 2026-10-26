@@ -115,6 +115,16 @@
             "type": "command",
             "command": "~/.claude/hooks/task-anchor.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh view",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh last",
+            "timeout": 10
           }
         ]
       }

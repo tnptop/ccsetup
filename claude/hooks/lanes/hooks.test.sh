@@ -119,6 +119,8 @@ for lanes in "" '; mkdir -p "$LD/t1"'; do
   quiet "SessionEnd" '{"hook_event_name":"SessionEnd","session_id":"S1","reason":"prompt_input_exit"}'
   quiet "SessionStart view" '{"hook_event_name":"SessionStart","session_id":"S2","source":"clear"}' view
   quiet "SessionStart last" '{"hook_event_name":"SessionStart","session_id":"S2","source":"clear"}' last
+  quiet "UserPromptSubmit view" "$(ups S1 hi "$T10")" view
+  quiet "UserPromptSubmit last" "$(ups S1 hi "$T10")" last
 done
 # omp reads leases by pid too: a fresh heartbeat with a dead pid is stale
 anchors
@@ -265,6 +267,32 @@ v=$(run "$HOOK" "$(start S2 startup)" view)
 l=$(run "$HOOK" "$(start S2 startup)" last)
 f=$(run "$HOOK" "$(start S2 fork)" view)
 t "SessionStart startup and fork do nothing" '[ -z "$v$l$f" ] && [ "$(snap)" = "$before" ]'
+
+# Test 6: UserPromptSubmit view|last: a window that claimed after startup
+# gets the view and the last exchange once (head not yet in its transcript);
+# read-only
+hookctx() { jq -c '{type:"attachment",attachment:{type:"hook_additional_context",content:[.hookSpecificOutput.additionalContext]}}'; }
+anchors S1
+lanedata 50 50
+before=$(snap)
+v=$(run "$HOOK" "$(ups S1 hi "$T10")" view)
+l=$(run "$HOOK" "$(ups S1 hi "$T10")" last)
+t "UserPromptSubmit view: UserPromptSubmit JSON, view head, at most 10,000 chars" '[ "$(printf %s "$v" | jq -r .hookSpecificOutput.hookEventName)" = UserPromptSubmit ] && [ "$(ctxlen "$v")" -le 10000 ] && case "$(printf %s "$v" | jq -r .hookSpecificOutput.additionalContext)" in "LANE VIEW (inject view, lane t1)"*) true ;; *) false ;; esac'
+t "UserPromptSubmit last: UserPromptSubmit JSON, last head, at most 10,000 chars" '[ "$(printf %s "$l" | jq -r .hookSpecificOutput.hookEventName)" = UserPromptSubmit ] && [ "$(ctxlen "$l")" -le 10000 ] && case "$(printf %s "$l" | jq -r .hookSpecificOutput.additionalContext)" in "LANE LAST EXCHANGE (inject last, lane t1)"*) true ;; *) false ;; esac'
+t "UserPromptSubmit view|last: task file and lane dir unchanged" '[ "$(snap)" = "$before" ]'
+o=$(run "$HOOK" "$(ups S1 hi "$tmp/missing.jsonl")" view)
+t "UserPromptSubmit view: missing transcript reads not injected" 'printf %s "$o" | grep -qF "LANE VIEW (inject view, lane t1)"'
+TV="$tmp/tv.jsonl"; cp "$T10" "$TV"; printf %s "$v" | hookctx >> "$TV"
+TL="$tmp/tl.jsonl"; cp "$T10" "$TL"; printf %s "$l" | hookctx >> "$TL"
+v2=$(run "$HOOK" "$(ups S1 hi "$TV")" view)
+l2=$(run "$HOOK" "$(ups S1 hi "$TV")" last)
+t "UserPromptSubmit: view head in transcript, view prints nothing, last still prints" '[ -z "$v2" ] && printf %s "$l2" | grep -qF "LANE LAST EXCHANGE (inject last, lane t1)"'
+v2=$(run "$HOOK" "$(ups S1 hi "$TL")" view)
+l2=$(run "$HOOK" "$(ups S1 hi "$TL")" last)
+t "UserPromptSubmit: last head in transcript, last prints nothing, view still prints" '[ -z "$l2" ] && printf %s "$v2" | grep -qF "LANE VIEW (inject view, lane t1)"'
+v2=$(run "$HOOK" "$(ups S9 hi "$T10")" view)
+l2=$(run "$HOOK" "$(ups S9 hi "$T10")" last)
+t "UserPromptSubmit view|last: no owned claim, nothing printed or written" '[ -z "$v2$l2" ] && [ "$(snap)" = "$before" ]'
 
 echo "$fails failed"
 [ "$fails" -eq 0 ]

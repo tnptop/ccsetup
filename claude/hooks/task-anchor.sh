@@ -2,7 +2,8 @@
 # task-anchor: inject the declared task so Claude can flag sidetracks.
 # Anchors: ~/.claude/task-anchors/<cwd-slug>/{INDEX.md,<task-slug>.md}
 # Lanes (uniichat lane design section 3): on in Claude Code; also Stop,
-# SessionEnd and SessionStart (arg view|last) call this.
+# SessionEnd and SessionStart (arg view|last) call this, and UserPromptSubmit
+# with arg view|last (a fresh window's first owned prompt).
 input=$(cat)
 event=$(printf '%s' "$input" | jq -r '.hook_event_name // empty' 2>/dev/null)
 # Key by project root, not .cwd: a Bash `cd` moves .cwd (lane design F5).
@@ -402,8 +403,29 @@ on_start() {
   [ -n "$ctx" ] && emit_json "$ctx" SessionStart
 }
 
+# UserPromptSubmit, arg view|last: a window that claimed after startup gets the
+# view or the last exchange once. Already injected (here, or by SessionStart
+# on clear/compact) = its head is in this session's transcript. Read-only: the
+# no-arg hook keeps the lease, the lane log and the prompt.
+on_prompt() {
+  local f= lane= head= ctx=
+  f=$(owned_task)
+  [ -n "$f" ] || return 0
+  lane=$(basename "$f" .md)
+  case "$1" in
+    view) head="LANE VIEW (inject view, lane $lane)" ;;
+    last) head="LANE LAST EXCHANGE (inject last, lane $lane)" ;;
+    *) return 0 ;;
+  esac
+  [ -f "$transcript_path" ] && grep -qF "$head" "$transcript_path" && return 0
+  [ "$1" = view ] && wait_leaves "$lanes_dir/$lane"
+  ctx=$(node "$LANE_TS" inject "$1" "$cwd" "$lane")
+  [ -n "$ctx" ] && emit_json "$ctx" UserPromptSubmit
+}
+
 # Lane events: only when lanes are on; quiet, always exit 0 (exit 2 on Stop
-# blocks the stop). UserPromptSubmit (and omp, which sends no event) go on.
+# blocks the stop). UserPromptSubmit with no arg (and omp, which sends no
+# event) goes on.
 case "$event" in
   Stop|SessionEnd|SessionStart)
     if lanes_on && [ -d "$anchor_dir" ]; then
@@ -414,6 +436,14 @@ case "$event" in
       esac 2>/dev/null
     fi
     exit 0
+    ;;
+  UserPromptSubmit)
+    if [ -n "$1" ]; then
+      if lanes_on && [ -d "$anchor_dir" ]; then
+        on_prompt "$1" 2>/dev/null
+      fi
+      exit 0
+    fi
     ;;
 esac
 
