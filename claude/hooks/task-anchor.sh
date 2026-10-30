@@ -427,6 +427,19 @@ on_prompt() {
 # blocks the stop). UserPromptSubmit with no arg (and omp, which sends no
 # event) goes on.
 case "$event" in
+  # PostToolUse, arg ctx: the context size on a tool result at each new 25k
+  # (as Mainplane does), so the model can save state before auto-compaction.
+  PostToolUse)
+    if [ "$1" = ctx ] && [ -n "$session_id" ]; then
+      k=$(ctx_tokens_of "$transcript_path")
+      state="${TMPDIR:-/tmp}/claude-ctx-${session_id}"
+      if [ "$k" -gt 0 ] && [ "$(cat "$state" 2>/dev/null)" != "$(( k / 25000 ))" ]; then
+        echo "$(( k / 25000 ))" > "$state"
+        emit_json "context ~$(( k / 1000 ))k" PostToolUse
+      fi
+    fi 2>/dev/null
+    exit 0
+    ;;
   Stop|SessionEnd|SessionStart)
     if lanes_on && [ -d "$anchor_dir" ]; then
       case "$event" in

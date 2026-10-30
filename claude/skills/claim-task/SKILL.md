@@ -60,7 +60,7 @@ The skill creates lanes only via steps d and e above, and never removes them; re
 
 ## 7. `steal <slug>` argument
 Only proceed if the user already confirmed stealing in this conversation (choosing a live-claimed row in §4 counts). Otherwise refuse and ask the user to confirm first.
-If confirmed: run §8 Claim write (it overwrites any existing `owner:` / `heartbeat:` lines and deletes `pid:` and `last_session:`; the task-anchor hook writes the new `pid:` on the next prompt).
+If confirmed: run §8 Claim write (it overwrites any existing `owner:` / `heartbeat:` lines and deletes `pid:` and `last_session:`; the claim write sets `pid:` from `CLAUDE_PID` when present, and the task-anchor hook refreshes it).
 
 ## 8. Claim write (atomic)
 Set `dir`, `slug`, `session_id`, `file="$dir/$slug.md"`, then run as-is (macOS bash; GNU/BSD `sed -i` split matches the hook's `rewrite_field`):
@@ -83,6 +83,7 @@ else
   fi
   printf 'owner: %s\n' "$session_id" >> "$file"
   printf 'heartbeat: %s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" >> "$file"
+  [ -n "${CLAUDE_PID:-}" ] && printf 'pid: %s\n' "$CLAUDE_PID" >> "$file"
   rmdir "${dir:?}/${slug:?}.lock"
 fi
 ```

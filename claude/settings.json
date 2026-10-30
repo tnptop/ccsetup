@@ -163,12 +163,23 @@
         ]
       },
       {
-        "matcher": "^(clear|compact)$",
+        "matcher": "^clear$",
         "hooks": [
           {
             "type": "command",
             "command": "~/.claude/hooks/task-anchor.sh last",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh ctx",
+            "timeout": 5
           }
         ]
       }
@@ -253,6 +264,6 @@
     ]
   },
   "cleanupPeriodDays": 365,
-  "autoCompactWindow": 250000,
+  "autoCompactWindow": 300000,
   "idleCompaction": false
 }

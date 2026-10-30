@@ -294,5 +294,17 @@ v2=$(run "$HOOK" "$(ups S9 hi "$T10")" view)
 l2=$(run "$HOOK" "$(ups S9 hi "$T10")" last)
 t "UserPromptSubmit view|last: no owned claim, nothing printed or written" '[ -z "$v2$l2" ] && [ "$(snap)" = "$before" ]'
 
+# Test 7: PostToolUse ctx: the context size once per 25k bucket, any session
+ptu() { printf '{"hook_event_name":"PostToolUse","session_id":"S1","transcript_path":"%s"}' "$1"; }
+mkdir -p "$tmp/ctx"
+o=$(TMPDIR="$tmp/ctx" run "$HOOK" "$(ptu "$T160")" ctx)
+t "PostToolUse ctx: first call prints context ~160k" '[ "$(printf %s "$o" | jq -r .hookSpecificOutput.additionalContext)" = "context ~160k" ] && [ "$(printf %s "$o" | jq -r .hookSpecificOutput.hookEventName)" = PostToolUse ]'
+o=$(TMPDIR="$tmp/ctx" run "$HOOK" "$(ptu "$T160")" ctx)
+t "PostToolUse ctx: same bucket prints nothing" '[ -z "$o" ]'
+o=$(TMPDIR="$tmp/ctx" run "$HOOK" "$(ptu "$T250")" ctx)
+t "PostToolUse ctx: new bucket prints context ~250k" '[ "$(printf %s "$o" | jq -r .hookSpecificOutput.additionalContext)" = "context ~250k" ]'
+o=$(TMPDIR="$tmp/ctx" run "$HOOK" "$(ptu "")" ctx); rc=$?
+t "PostToolUse ctx: empty transcript_path, exit 0, quiet" '[ $rc -eq 0 ] && [ -z "$o" ]'
+
 echo "$fails failed"
 [ "$fails" -eq 0 ]
