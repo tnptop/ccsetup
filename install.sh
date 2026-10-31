@@ -10,7 +10,8 @@
 #   ./install.sh promote <path>... copy only these paths $HOME -> repo (new files ok)
 #   ./install.sh --check           list files that differ between repo and $HOME
 #   ./install.sh --dry-run         with install, sync, or promote: print, touch nothing
-#   ./install.sh opencode          copy only the OpenCode config and guardrail plugin repo -> $HOME
+#   ./install.sh opencode          copy only the OpenCode config, rules and guardrail plugin repo -> $HOME
+#   ./install.sh rules             copy only the shared rules and CLAUDE.md repo -> $HOME
 #   ./install.sh plugins           add marketplaces and install plugins via `claude`
 #   ./install.sh --rollback [d]    restore a backup dir (default: the newest one)
 #
@@ -21,6 +22,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE="$HOME/.claude"
 AGENTS="$HOME/.agents"
 OPENCODE="$HOME/.config/opencode"
+CODEX="$HOME/.codex"
 BACKUP_ROOT="$CLAUDE/backups"
 BACKUP="$BACKUP_ROOT/ccsetup-$(date +%Y%m%d-%H%M%S)"
 EXCLUDES=(--exclude .DS_Store --exclude '*.bak')
@@ -36,10 +38,11 @@ while [ $# -gt 0 ]; do
     sync)       MODE="sync" ;;
     plugins)    MODE="plugins" ;;
     opencode)   MODE="opencode" ;;
+    rules)      MODE="rules" ;;
     promote)    MODE="promote"; break ;;   # everything after "promote" is paths, handled below
     --rollback) MODE="rollback"
                 if [ $# -gt 1 ] && [ "${2#-}" = "$2" ]; then ROLLBACK_DIR="$2"; shift; fi ;;
-    -h|--help)  sed -n '2,17p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '2,18p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -62,12 +65,20 @@ run() { if [ "$DRY" = 1 ]; then log "  dry: $*"; else "$@"; fi; }
 opencode_pairs() {
   echo "opencode/opencode.json|$OPENCODE/opencode.json"
   echo "opencode/plugins/ccsetup-guardrails.js|$OPENCODE/plugins/ccsetup-guardrails.js"
+  echo "shared/AGENTS.md|$OPENCODE/AGENTS.md"
+}
+
+# The shared rules and the Claude Code file that imports them. The OpenCode copy is in opencode_pairs.
+rules_pairs() {
+  echo "shared/AGENTS.md|$CLAUDE/AGENTS.md"
+  echo "shared/AGENTS.md|$CODEX/AGENTS.md"
+  echo "claude/CLAUDE.md|$CLAUDE/CLAUDE.md"
 }
 
 # Emits "repo-relative-path|absolute-home-path" lines.
 pairs() {
   opencode_pairs
-  echo "claude/CLAUDE.md|$CLAUDE/CLAUDE.md"
+  rules_pairs
   echo "claude/settings.json|$CLAUDE/settings.json"
   echo "claude/statusline-command.sh|$CLAUDE/statusline-command.sh"
   echo "claude/hooks|$CLAUDE/hooks"
@@ -175,6 +186,7 @@ promote_usage_paths() {
   cat >&2 <<EOF
 promote accepts one of these (absolute, ~/-prefixed, or the repo-relative form):
   $CLAUDE/CLAUDE.md                <-> claude/CLAUDE.md
+  $CLAUDE/AGENTS.md                <-> shared/AGENTS.md
   $CLAUDE/settings.json            <-> claude/settings.json
   $CLAUDE/statusline-command.sh    <-> claude/statusline-command.sh
   $CLAUDE/hooks/<name>             <-> claude/hooks/<name>
@@ -201,6 +213,7 @@ promote_resolve() {
   esac
   case "$p" in
     "$CLAUDE/CLAUDE.md")               PR_REPO="claude/CLAUDE.md" ;;
+    "$CLAUDE/AGENTS.md")               PR_REPO="shared/AGENTS.md" ;;
     "$CLAUDE/settings.json")           PR_REPO="claude/settings.json" ;;
     "$CLAUDE/statusline-command.sh")   PR_REPO="claude/statusline-command.sh" ;;
     "$CLAUDE/hooks/"*)
@@ -220,6 +233,7 @@ promote_resolve() {
     opencode/opencode.json)            PR_REPO="$p" ;;
     opencode/plugins/*)                PR_REPO="$p" ;;
     claude/CLAUDE.md)                  PR_REPO="$p" ;;
+    shared/AGENTS.md)                  PR_REPO="$p" ;;
     claude/settings.json)              PR_REPO="$p" ;;
     claude/statusline-command.sh)      PR_REPO="$p" ;;
     claude/hooks/*)                    PR_REPO="$p" ;;
@@ -236,6 +250,7 @@ promote_resolve() {
   esac
   case "$PR_REPO" in
     claude/CLAUDE.md)               PR_HOME="$CLAUDE/CLAUDE.md" ;;
+    shared/AGENTS.md)               PR_HOME="$CLAUDE/AGENTS.md" ;;
     claude/settings.json)           PR_HOME="$CLAUDE/settings.json" ;;
     claude/statusline-command.sh)   PR_HOME="$CLAUDE/statusline-command.sh" ;;
     claude/hooks/*)
@@ -353,6 +368,8 @@ case "$MODE" in
     BACKUP="$REPO/.sync-backup"   # repo side is under git; no backup needed
     log "syncing \$HOME -> repo"
     while IFS='|' read -r src dst; do
+      # shared/AGENTS.md has three home copies. Only the Claude one syncs back, so a stale copy cannot win.
+      case "$dst" in "$CODEX/AGENTS.md"|"$OPENCODE/AGENTS.md") continue ;; esac
       [ -e "$dst" ] || { log "  skip $dst (missing on this machine)"; continue; }
       case "$src" in
         claude/settings.json) sync_settings ;;
@@ -365,7 +382,7 @@ case "$MODE" in
     ;;
   promote)
     if [ ${#PROMOTE_ARGS[@]} -eq 0 ]; then
-      sed -n '2,17p' "$0" >&2
+      sed -n '2,18p' "$0" >&2
       exit 2
     fi
     BACKUP="$REPO/.sync-backup"   # repo side is under git; no backup needed
@@ -400,6 +417,13 @@ case "$MODE" in
     log "installing OpenCode config repo -> \$HOME (backups: $BACKUP)"
     install_opencode
     log "done. Check with: opencode debug config"
+    ;;
+  rules)
+    log "installing shared rules repo -> \$HOME (backups: $BACKUP)"
+    while IFS='|' read -r src dst; do
+      copy "$REPO/$src" "$dst"
+    done < <(rules_pairs; echo "shared/AGENTS.md|$OPENCODE/AGENTS.md")
+    log "done. Rules load in new sessions."
     ;;
   plugins)
     for m in warpdotdev/claude-code-warp openai/codex-plugin-cc; do

@@ -11,7 +11,8 @@ commit, and push.
 
 | Repo path | Copied to | Notes |
 |---|---|---|
-| `claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | Global instructions |
+| `shared/AGENTS.md` | `~/.claude/AGENTS.md`, `~/.codex/AGENTS.md`, `~/.config/opencode/AGENTS.md` | Rules for every tool. `sync` and `promote` read only the `~/.claude` copy |
+| `claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | Imports `AGENTS.md`, then adds the rules only Claude Code can follow |
 | `claude/settings.json` | `~/.claude/settings.json` | Machine-specific `autoMode.environment` is stripped |
 | `claude/hooks/` | `~/.claude/hooks/` | All hooks need `jq`. `token-limit-exclude` is the machine overlay for `token-limit.sh`; per-repo rules go in `<repo>/.claude/token-limit-exclude`. |
 | `claude/statusline-command.sh` | `~/.claude/statusline-command.sh` | Needs `jq` |
@@ -19,7 +20,7 @@ commit, and push.
 | `claude/skills/{park,claim-task,promote-to-shared}` | `~/.claude/skills/...` | Hand-written skills that live in `~/.claude/skills` |
 | `dot-agents/skills/` | `~/.agents/skills/` | Skills installed with the `skills` CLI, plus 4 hand-written ones. `~/.claude/skills/<name>` gets a relative symlink to each |
 | `dot-agents/.skill-lock.json` | `~/.agents/.skill-lock.json` | Lets `npx skills update` keep working |
-| `workspace/colleague-output-style.md` | `~/workspace/colleague-output-style.md` | Referenced by CLAUDE.md |
+| `workspace/colleague-output-style.md` | `~/workspace/colleague-output-style.md` | Referenced by `shared/AGENTS.md` |
 | `memory/<name>/` | `~/.claude/projects/<slug>/memory/` | `workspace` and `workspace-personal` today; `-` in the name means `/` under `$HOME`. Copied once, never overwritten. `sync` does not copy memory back; refresh by hand with `rsync` before a migration |
 
 Not in the repo on purpose: `~/.claude.json` (login, machine ID), `settings.local.json`,
