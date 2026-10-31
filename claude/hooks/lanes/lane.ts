@@ -99,7 +99,7 @@ export function injectView(project: string, lane: string): string {
 
 // the last exchange (last.json, written by the Stop hook) verbatim; over
 // CAP, the prompt's first 1,500 chars and the message's end (its next step
-// and options), naming the transcript for the cut. "": none
+// and options); the head always names the raw transcript. "": none
 export function injectLast(project: string, lane: string): string {
   let j: any;
   try {
@@ -108,13 +108,13 @@ export function injectLast(project: string, lane: string): string {
     return "";
   }
   const [prompt, message] = [String(j.prompt ?? ""), String(j.message ?? "")];
-  const head = `LANE LAST EXCHANGE (inject last, lane ${lane}): the last prompt and reply before this session, verbatim. Summary up to ${j.date || "?"}; ${RULES}\n`;
+  const head = `LANE LAST EXCHANGE (inject last, lane ${lane}): the last prompt and reply before this session, verbatim. Summary up to ${j.date || "?"}; ${RULES} Raw transcript of that session (read-only): ${j.transcript || "?"}\n`;
   const whole = head + "user: " + prompt + "\nassistant: " + message;
   if (whole.length <= CAP) {
     return whole;
   }
   const top = head + "user: " + (prompt.length > 1500 ? prompt.slice(0, 1500) + " [...]" : prompt) + "\nassistant: [...] ";
-  const tail = "\n[cut: the whole exchange is in " + j.transcript + "]";
+  const tail = "\n[cut: the whole exchange is in the raw transcript above]";
   return top + message.slice(message.length - Math.max(0, CAP - top.length - tail.length)) + tail;
 }
 

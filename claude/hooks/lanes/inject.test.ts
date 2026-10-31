@@ -45,7 +45,7 @@ test("a 20k-char view clips its oldest lines to CAP, with zoom 0+N", () => {
   assert.equal(injectView(lane({}), "l"), "");
 });
 
-test("a 20k-char Thai last exchange keeps the prompt start, the message end and the transcript", () => {
+test("a 20k-char Thai last exchange keeps the prompt start and the message end, and names the transcript", () => {
   const thai = "ภาษาไทย".repeat(1500); // 10,500 chars, 31,500 bytes
   const project = lane({
     "last.json": JSON.stringify({ prompt: "PSTART " + thai, message: thai + " MEND", transcript: "/t/s.jsonl", date: "2026-10-22T11:00:00+07:00" }),
@@ -55,12 +55,14 @@ test("a 20k-char Thai last exchange keeps the prompt start, the message end and 
   assert.match(t, /^LANE LAST EXCHANGE \(inject last, lane l\)/);
   assert.match(t, /Summary up to 2026-10-22T11:00:00\+07:00; live state not checked/);
   assert.match(t, /\nuser: PSTART ภาษาไทย/);
-  assert.match(t, / MEND\n\[cut: the whole exchange is in \/t\/s\.jsonl\]$/);
+  assert.match(t, /Raw transcript of that session \(read-only\): \/t\/s\.jsonl\n/);
+  assert.match(t, / MEND\n\[cut: the whole exchange is in the raw transcript above\]$/);
   const kept = t.slice(t.indexOf("user: ") + 6, t.indexOf(" [...]"));
   assert.equal(kept.length, 1500);
   // a short one is whole
   const small = lane({ "last.json": JSON.stringify({ prompt: "A", message: "pick A or B", transcript: "/t", date: "d" }) });
   assert.match(injectLast(small, "l"), /\nuser: A\nassistant: pick A or B$/);
+  assert.ok(injectLast(small, "l").includes("Raw transcript of that session (read-only): /t\n"));
   assert.equal(injectLast(lane({}), "l"), "");
 });
 

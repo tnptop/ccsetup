@@ -253,13 +253,17 @@ is_task_file() {
 }
 
 # Context tokens of the transcript's last usage line; arg 2 (Stop) adds its
-# output tokens.
+# output tokens. A compact_boundary after the last usage line means the
+# post-compaction size (its postTokens, 0 when absent).
 ctx_tokens_of() {
   local tp="$1" out="${2:+ + (.output_tokens // 0)}" usage_line= parsed=
   if [ -n "$tp" ] && [ -f "$tp" ]; then
-    usage_line=$(tail -c 400000 "$tp" | grep '"cache_read_input_tokens"' | tail -1) || true
+    usage_line=$(tail -c 400000 "$tp" | grep -e '"cache_read_input_tokens"' -e '"subtype":"compact_boundary"' | tail -1) || true
     if [ -n "$usage_line" ]; then
-      parsed=$(printf '%s' "$usage_line" | jq -r ".message.usage | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0)${out}" 2>/dev/null) || true
+      case "$usage_line" in
+        *'"subtype":"compact_boundary"'*) parsed=$(printf '%s' "$usage_line" | jq -r '.compactMetadata.postTokens // 0' 2>/dev/null) || true ;;
+        *) parsed=$(printf '%s' "$usage_line" | jq -r ".message.usage | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0)${out}" 2>/dev/null) || true ;;
+      esac
       case "$parsed" in
         ''|*[!0-9]*) ;;
         *) printf '%s' "$parsed"; return ;;

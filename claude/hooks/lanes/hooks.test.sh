@@ -225,7 +225,7 @@ t "SessionStart clear re-claims with the new sid and the same pid" 'grep -qx "ow
 t "SessionStart clear leaves another live window's claim" '[ "$(cat "$AD/t2.md")" = "$before2" ]'
 t "SessionStart view: SessionStart JSON, at most 10,000 chars, zoom line" '[ "$(printf %s "$v" | jq -r .hookSpecificOutput.hookEventName)" = SessionStart ] && [ "$(ctxlen "$v")" -le 10000 ] && printf %s "$v" | jq -r .hookSpecificOutput.additionalContext | grep -q "^older lines cut: zoom 0+[0-9]*$" && printf %s "$v" | grep -qF "LANE VIEW (inject view, lane t1)"'
 t "SessionStart view: all leaves built, no wait" 'perl -e "exit !($t1 - $t0 < 1.5)"'
-t "SessionStart last: at most 10,000 chars, prompt start, message end, transcript" '[ "$(ctxlen "$l")" -le 10000 ] && c=$(printf %s "$l" | jq -r .hookSpecificOutput.additionalContext) && case "$c" in "LANE LAST EXCHANGE (inject last, lane t1)"*"user: PSTART ภาษาไทย"*" MEND"*"/t/s1.jsonl]") true ;; *) false ;; esac'
+t "SessionStart last: at most 10,000 chars, prompt start, message end, transcript" '[ "$(ctxlen "$l")" -le 10000 ] && c=$(printf %s "$l" | jq -r .hookSpecificOutput.additionalContext) && case "$c" in "LANE LAST EXCHANGE (inject last, lane t1)"*"Raw transcript of that session (read-only): /t/s1.jsonl"*"user: PSTART ภาษาไทย"*" MEND"*"raw transcript above]") true ;; *) false ;; esac'
 
 anchors S1
 lanedata 6 3
@@ -305,6 +305,23 @@ o=$(TMPDIR="$tmp/ctx" run "$HOOK" "$(ptu "$T250")" ctx)
 t "PostToolUse ctx: new bucket prints context ~250k" '[ "$(printf %s "$o" | jq -r .hookSpecificOutput.additionalContext)" = "context ~250k" ]'
 o=$(TMPDIR="$tmp/ctx" run "$HOOK" "$(ptu "")" ctx); rc=$?
 t "PostToolUse ctx: empty transcript_path, exit 0, quiet" '[ $rc -eq 0 ] && [ -z "$o" ]'
+
+# Test 8: a compact_boundary after the last usage line means postTokens
+TU="$tmp/tu.jsonl"; usage 1000 249000 500 "$TU"
+TC="$tmp/tc.jsonl"; cp "$TU" "$TC"
+printf '%s\n' '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted","compactMetadata":{"trigger":"auto","preTokens":250000,"postTokens":27000}}' >> "$TC"
+TC0="$tmp/tc0.jsonl"; cp "$TU" "$TC0"
+printf '%s\n' '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}' >> "$TC0"
+anchors S1
+o=$(run "$HOOK" "$(ups S1 hello "$TC")")
+t "compact_boundary: UserPromptSubmit no nudge" '! printf %s "$o" | jq -r .hookSpecificOutput.additionalContext | grep -q "context ~"'
+o=$(run "$HOOK" "$(ups S1 hello "$TU")")
+t "no compact_boundary: UserPromptSubmit nudge at 250k" 'printf %s "$o" | jq -r .hookSpecificOutput.additionalContext | grep -qF "context ~250k"'
+mkdir -p "$tmp/ctxc" "$tmp/ctxc0"
+o=$(TMPDIR="$tmp/ctxc" run "$HOOK" "$(ptu "$TC")" ctx)
+t "compact_boundary: PostToolUse ctx prints context ~27k" '[ "$(printf %s "$o" | jq -r .hookSpecificOutput.additionalContext)" = "context ~27k" ]'
+o=$(TMPDIR="$tmp/ctxc0" run "$HOOK" "$(ptu "$TC0")" ctx); rc=$?
+t "compact_boundary without compactMetadata: PostToolUse ctx exit 0, quiet" '[ $rc -eq 0 ] && [ -z "$o" ]'
 
 echo "$fails failed"
 [ "$fails" -eq 0 ]
