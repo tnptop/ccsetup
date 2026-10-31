@@ -106,6 +106,71 @@
             "type": "command",
             "command": "~/.claude/hooks/task-anchor.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh view",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh last",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "^(clear|compact|resume)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh view",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "^clear$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh last",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh ctx",
+            "timeout": 5
           }
         ]
       }
@@ -140,7 +205,9 @@
   "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
-  "autoCompactEnabled": false,
+  "autoCompactEnabled": true,
   "agentPushNotifEnabled": true,
-  "cleanupPeriodDays": 365
+  "cleanupPeriodDays": 365,
+  "autoCompactWindow": 300000,
+  "idleCompaction": false
 }
