@@ -38,11 +38,11 @@ To commit: list unstaged files, propose which to stage, stage them, then draft t
 
 A UserPromptSubmit hook (`~/.claude/hooks/task-anchor.sh`) injects the declared task from `~/.claude/task-anchors/<cwd-slug>/` into every prompt, together with the claim, sidetrack, and park instructions; follow them. When a prompt diverges from the anchor, flag the possible sidetrack in one line and ask: park it or switch the anchor?
 
-Closing turns (LR 0015): while this session owns an ACTIVE anchor, any turn that ends the work — hand-off, context cap, day end, "open a fresh session" — ends with the literal command as its next action: `/park`, `/park next`, `/park switch <task>`, or `/park closed`. Never "open a fresh session" or "start a new session" in that slot. Never write "parked", "anchor updated", or "the anchor points there" in prose unless `/park` ran in this session — a closing message that reads like a park is not a park, and no hook can catch a session that ends by silence.
+Closing turns (LR 0015): while this session owns an ACTIVE anchor, a turn that ends the work ends with one literal next action: `/park closed` when done, otherwise tell me to type `/clear` (in omp: `/park`, `/park next`, `/park switch <task>`, or `/park closed`). Never "open a fresh session" in that slot, and never write "parked" or "anchor updated" in prose unless `/park` ran in this session.
 
 # Implementation Notes
 
-During non-trivial implementation, keep `implementation-notes.md` at repo root: decisions + rationale, plan deviations, surprises. Per-task — reset on new task. Use it as evidence for commit AI/Human breakdowns. At task close, promote cross-task learnings to worklog/docs/memory.
+During non-trivial implementation, keep `implementation-notes.md` at repo root: decisions + rationale, plan deviations, surprises. Per-task — reset on new task. Use it as evidence for commit AI/Human breakdowns. At task close, promote cross-task learnings to worklog/docs/memory. A tool result tagged `context ~Nk` reports the prompt size; at 200k or more, write the open decisions and the next action to `implementation-notes.md` (or the repo's worklog) before the next step, so the compaction summary is not the only record.
 
 # Blind Spot Pass
 
