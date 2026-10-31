@@ -83,6 +83,21 @@ How to work with a machine branch:
 3. Commit machine-only files directly on the machine branch. Never merge the machine branch into `main`.
 4. On a new machine, start from `main`, run `./install.sh`, then create `machine/<user>` for that machine's own state.
 
+## OpenCode
+
+OpenCode's Claude Agent provider ignores `~/.claude/settings.json` and turns Claude Code hooks off, so the guardrails need their own install:
+
+    ./install.sh opencode
+
+This touches only `~/.config/opencode`:
+
+- `opencode/opencode.json` holds `permissions` and `policies` (OpenCode v2 format). Install merges those two keys into the live file and keeps everything else, such as providers. `sync` and `promote` copy only those two keys back.
+- `opencode/plugins/ccsetup-guardrails.js` runs `~/.claude/hooks/block-dangerous-git.sh`, `push-gate.sh` and `token-limit.sh` on shell, write and edit calls. It blocks if a script or `jq` is missing, or if a script fails.
+
+Test with `node opencode/guardrails.test.mjs`.
+
+These rules catch mistakes. They are not a sandbox: the policy patterns match command text, so a script file or a shell variable can still get past them, and text that only mentions a blocked command is blocked too. The patch tool skips the token limit.
+
 ## Windows
 
 The Windows machine was synced by hand on 2026-09-28. Its own state is on

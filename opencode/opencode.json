@@ -1,0 +1,23 @@
+{
+  "permissions": [
+    { "action": "shell", "resource": "git push *", "effect": "ask" }
+  ],
+  "policies": [
+    { "action": "tool.use", "resource": "shell:*git reset --hard*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*git clean*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*git branch -D*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*git -C * reset --hard*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*git -C * clean*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*git -C * branch -D*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:git checkout . *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:git restore . *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*rm -rf*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*rm -fr*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*rm -Rf*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*rm -fR*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*rm -r -f*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*rm -f -r*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*rm --recursive --force*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*rm --force --recursive*", "effect": "deny" }
+  ]
+}

@@ -10,6 +10,7 @@
 #   ./install.sh promote <path>... copy only these paths $HOME -> repo (new files ok)
 #   ./install.sh --check           list files that differ between repo and $HOME
 #   ./install.sh --dry-run         with install, sync, or promote: print, touch nothing
+#   ./install.sh opencode          copy only the OpenCode config and guardrail plugin repo -> $HOME
 #   ./install.sh plugins           add marketplaces and install plugins via `claude`
 #   ./install.sh --rollback [d]    restore a backup dir (default: the newest one)
 #
@@ -19,6 +20,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE="$HOME/.claude"
 AGENTS="$HOME/.agents"
+OPENCODE="$HOME/.config/opencode"
 BACKUP_ROOT="$CLAUDE/backups"
 BACKUP="$BACKUP_ROOT/ccsetup-$(date +%Y%m%d-%H%M%S)"
 EXCLUDES=(--exclude .DS_Store --exclude '*.bak')
@@ -33,10 +35,11 @@ while [ $# -gt 0 ]; do
     --check)    MODE="check" ;;
     sync)       MODE="sync" ;;
     plugins)    MODE="plugins" ;;
+    opencode)   MODE="opencode" ;;
     promote)    MODE="promote"; break ;;   # everything after "promote" is paths, handled below
     --rollback) MODE="rollback"
                 if [ $# -gt 1 ] && [ "${2#-}" = "$2" ]; then ROLLBACK_DIR="$2"; shift; fi ;;
-    -h|--help)  sed -n '2,16p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '2,17p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -55,8 +58,15 @@ fi
 log() { printf '%s\n' "$*"; }
 run() { if [ "$DRY" = 1 ]; then log "  dry: $*"; else "$@"; fi; }
 
+# The OpenCode files. opencode.json is merged by key, not copied (see install_opencode_config).
+opencode_pairs() {
+  echo "opencode/opencode.json|$OPENCODE/opencode.json"
+  echo "opencode/plugins/ccsetup-guardrails.js|$OPENCODE/plugins/ccsetup-guardrails.js"
+}
+
 # Emits "repo-relative-path|absolute-home-path" lines.
 pairs() {
+  opencode_pairs
   echo "claude/CLAUDE.md|$CLAUDE/CLAUDE.md"
   echo "claude/settings.json|$CLAUDE/settings.json"
   echo "claude/statusline-command.sh|$CLAUDE/statusline-command.sh"
@@ -134,6 +144,33 @@ sync_settings() {
   fi
 }
 
+# opencode.json: the repo owns only "permissions" and "policies". Everything else in the
+# live file (providers, for example) belongs to the machine and is kept.
+install_opencode_config() {
+  local src="$REPO/opencode/opencode.json" dst="$OPENCODE/opencode.json" tmp
+  tmp=$(mktemp)
+  if [ -f "$dst" ]; then
+    jq -s '.[0] + {permissions: .[1].permissions, policies: .[1].policies}' "$dst" "$src" > "$tmp"
+  else
+    jq '{"$schema": "https://opencode.ai/config.json"} + .' "$src" > "$tmp"
+  fi
+  copy "$tmp" "$dst"; rm -f "$tmp"
+}
+sync_opencode_config() {
+  local tmp
+  tmp=$(mktemp)
+  jq '{permissions, policies}' "$OPENCODE/opencode.json" > "$tmp"
+  copy "$tmp" "$REPO/opencode/opencode.json"; rm -f "$tmp"
+}
+opencode_config_same() {
+  cmp -s <(jq -S '{permissions, policies}' "$OPENCODE/opencode.json") <(jq -S '{permissions, policies}' "$REPO/opencode/opencode.json")
+}
+install_opencode() {
+  while IFS='|' read -r src dst; do
+    case "$src" in opencode/opencode.json) install_opencode_config ;; *) copy "$REPO/$src" "$dst" ;; esac
+  done < <(opencode_pairs)
+}
+
 promote_usage_paths() {
   cat >&2 <<EOF
 promote accepts one of these (absolute, ~/-prefixed, or the repo-relative form):
@@ -146,6 +183,8 @@ promote accepts one of these (absolute, ~/-prefixed, or the repo-relative form):
   $AGENTS/skills/<name>            <-> dot-agents/skills/<name>
   $AGENTS/.skill-lock.json         <-> dot-agents/.skill-lock.json
   $HOME/workspace/colleague-output-style.md <-> workspace/colleague-output-style.md
+  $OPENCODE/opencode.json          <-> opencode/opencode.json  (permissions and policies only)
+  $OPENCODE/plugins/<name>         <-> opencode/plugins/<name>
 EOF
 }
 
@@ -175,6 +214,11 @@ promote_resolve() {
     "$AGENTS/.skill-lock.json")        PR_REPO="dot-agents/.skill-lock.json" ;;
     "$HOME/workspace/colleague-output-style.md")
       PR_REPO="workspace/colleague-output-style.md" ;;
+    "$OPENCODE/opencode.json")         PR_REPO="opencode/opencode.json" ;;
+    "$OPENCODE/plugins/"*)
+      name="${p#"$OPENCODE"/plugins/}"; PR_REPO="opencode/plugins/$name" ;;
+    opencode/opencode.json)            PR_REPO="$p" ;;
+    opencode/plugins/*)                PR_REPO="$p" ;;
     claude/CLAUDE.md)                  PR_REPO="$p" ;;
     claude/settings.json)              PR_REPO="$p" ;;
     claude/statusline-command.sh)      PR_REPO="$p" ;;
@@ -210,6 +254,9 @@ promote_resolve() {
     dot-agents/.skill-lock.json)    PR_HOME="$AGENTS/.skill-lock.json" ;;
     workspace/colleague-output-style.md)
       PR_HOME="$HOME/workspace/colleague-output-style.md" ;;
+    opencode/opencode.json)         PR_HOME="$OPENCODE/opencode.json" ;;
+    opencode/plugins/*)
+      name="${PR_REPO#opencode/plugins/}"; PR_HOME="$OPENCODE/plugins/$name" ;;
   esac
   if [ ! -e "$PR_HOME" ]; then
     log "error: $PR_HOME does not exist"
@@ -292,7 +339,11 @@ case "$MODE" in
     log "preflight"; preflight
     log "installing repo -> \$HOME (backups: $BACKUP)"
     while IFS='|' read -r src dst; do
-      case "$src" in claude/settings.json) install_settings ;; *) copy "$REPO/$src" "$dst" ;; esac
+      case "$src" in
+        claude/settings.json) install_settings ;;
+        opencode/opencode.json) install_opencode_config ;;
+        *) copy "$REPO/$src" "$dst" ;;
+      esac
     done < <(pairs)
     log "skill links"; link_skills
     log "memory"; install_memory
@@ -303,14 +354,18 @@ case "$MODE" in
     log "syncing \$HOME -> repo"
     while IFS='|' read -r src dst; do
       [ -e "$dst" ] || { log "  skip $dst (missing on this machine)"; continue; }
-      case "$src" in claude/settings.json) sync_settings ;; *) copy "$dst" "$REPO/$src" ;; esac
+      case "$src" in
+        claude/settings.json) sync_settings ;;
+        opencode/opencode.json) sync_opencode_config ;;
+        *) copy "$dst" "$REPO/$src" ;;
+      esac
     done < <(pairs)
     rm -rf "$REPO/.sync-backup"
     log "done. Review with: git status && git diff"
     ;;
   promote)
     if [ ${#PROMOTE_ARGS[@]} -eq 0 ]; then
-      sed -n '2,16p' "$0" >&2
+      sed -n '2,17p' "$0" >&2
       exit 2
     fi
     BACKUP="$REPO/.sync-backup"   # repo side is under git; no backup needed
@@ -319,6 +374,7 @@ case "$MODE" in
       promote_resolve "$raw"
       case "$PR_REPO" in
         claude/settings.json) sync_settings ;;
+        opencode/opencode.json) sync_opencode_config ;;
         *) copy "$PR_HOME" "$REPO/$PR_REPO" ;;
       esac
     done
@@ -334,10 +390,16 @@ case "$MODE" in
              if on_machine_branch; then cmp -s <(jq -S . "$dst") <(jq -S . "$REPO/$src")
              else cmp -s <(jq -S 'del(.autoMode)' "$dst") <(jq -S . "$REPO/$src"); fi
            }; then log "  ok      $dst"
+      elif [ "$src" = opencode/opencode.json ] && [ -f "$dst" ] && opencode_config_same; then log "  ok      $dst"
       elif same "$REPO/$src" "$dst"; then log "  ok      $dst"
       elif [ -e "$dst" ]; then log "  DIFF    $dst (repo $(newest "$REPO/$src"), home $(newest "$dst"))"
       else log "  MISSING $dst"; fi
     done < <(pairs)
+    ;;
+  opencode)
+    log "installing OpenCode config repo -> \$HOME (backups: $BACKUP)"
+    install_opencode
+    log "done. Check with: opencode debug config"
     ;;
   plugins)
     for m in warpdotdev/claude-code-warp openai/codex-plugin-cc; do
