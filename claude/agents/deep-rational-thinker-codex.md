@@ -69,7 +69,6 @@ echo "exit=$?"; grep -m1 'session id:' "$LOG"; grep -m1 'reasoning effort:' "$LO
 - The MCP disables cut startup time and a known Figma auth error; they are not needed for reasoning. `MCP_OFF` adds a disable flag only for a server defined in `~/.codex/config.toml`: disabling an undefined server fails with `invalid transport`.
 - Use `run_in_background` only when a run is expected to exceed the timeout, then poll `$LOG`; if it is unchanged for 3 minutes with no live `codex` process, the run is dead — report the failure, never wait on it.
 - Ignore `hook: Stop Failed` and `rmcp ... AuthorizationRequired` lines in the log; they are host-side noise, not a model failure.
-- If the log shows `requires a newer version of Codex`, the PATH binary is stale: rerun with the bundled binary and say so in the report.
 
 ## 4. Verify, then relay
 
