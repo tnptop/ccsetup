@@ -28,11 +28,9 @@ In plan mode: no implementation, even if I approve verbally. Only exit-plan-mode
 
 These rules apply in every tool, whether or not a hook or policy enforces them. A command that a guardrail lets through still needs the approval below.
 
-Never run these destructive git commands: reset --hard, clean, branch -D, checkout/restore `.`.
+Never run these destructive git commands: git push, reset --hard, clean, branch -D, checkout/restore `.`.
 
-Never push to main, master, the remote's default branch, or any branch whose first commit is not mine. Write every push as `[cd <absolute path> && ]git push [-u] [--force-with-lease] origin <branch>`.
-
-`git commit`, `git push`, `rebase`, `merge`, `stash drop`, deleting files, and anything touching remote state require my explicit approval. A push follows the commit rule: ask first, and run it only when I hand it over that turn. Reversible edits that follow from my request proceed without re-asking. When I ask for opinion or analysis, report — don't change anything. When in doubt, ask.
+`git commit`, `rebase`, `merge`, `stash drop`, deleting files, and anything touching remote state require my explicit approval. Reversible edits that follow from my request proceed without re-asking. When I ask for opinion or analysis, report — don't change anything. When in doubt, ask.
 
 # Committing
 

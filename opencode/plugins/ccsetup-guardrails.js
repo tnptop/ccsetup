@@ -1,11 +1,12 @@
 // ccsetup guardrails: runs the Claude Code PreToolUse hook scripts on OpenCode tool calls.
 // OpenCode's Claude Agent provider turns Claude Code hooks off, so this is what enforces them there.
+// Install copies the scripts to ../guardrails, so this does not depend on what ~/.claude holds on a machine.
 // Any failure blocks: a missing script, a missing jq, a timeout, or a non-zero exit.
 // Not covered: the patch tool skips token-limit, because a patch has no single target and size.
 import { spawn } from "node:child_process"
-import { homedir } from "node:os"
 import { existsSync } from "node:fs"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 
 const TIMEOUT_MS = 30_000
 // A background OpenCode service may not have Homebrew on PATH, and block-dangerous-git.sh passes when jq is absent.
@@ -40,9 +41,7 @@ function plan(tool, input, directory) {
   const file = input?.path ? path.resolve(directory, input.path) : undefined
   if (tool === "shell") {
     const command = input?.command ?? ""
-    const scripts = ["block-dangerous-git.sh"]
-    if (command.includes("push")) scripts.push("push-gate.sh")
-    return { cwd, scripts, payload: { tool_name: "Bash", tool_input: { command }, cwd } }
+    return { cwd, scripts: ["block-dangerous-git.sh"], payload: { tool_name: "Bash", tool_input: { command }, cwd } }
   }
   if (tool === "write") {
     const tool_input = { file_path: file, content: input?.content ?? "" }
@@ -58,7 +57,7 @@ function plan(tool, input, directory) {
 export default {
   id: "ccsetup.guardrails",
   async setup(ctx) {
-    const hooksDir = ctx.options?.hooksDir ?? path.join(homedir(), ".claude", "hooks")
+    const hooksDir = ctx.options?.hooksDir ?? fileURLToPath(new URL("../guardrails", import.meta.url))
     const directory = ctx.location?.directory ?? process.cwd()
     let jqFound = false
 

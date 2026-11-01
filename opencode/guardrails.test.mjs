@@ -1,11 +1,12 @@
-// Run with: node opencode/guardrails.test.mjs [hooks dir, default ~/.claude/hooks]
+// Run with: node opencode/guardrails.test.mjs [hooks dir, default this repo's claude/hooks]
 import assert from "node:assert/strict"
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs"
-import { homedir, tmpdir } from "node:os"
+import { tmpdir } from "node:os"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import plugin from "./plugins/ccsetup-guardrails.js"
 
-const hooksDir = process.argv[2] ?? path.join(homedir(), ".claude", "hooks")
+const hooksDir = process.argv[2] ?? fileURLToPath(new URL("../claude/hooks", import.meta.url))
 const dir = mkdtempSync(path.join(tmpdir(), "guardrails-"))
 
 async function load(options) {
@@ -28,6 +29,7 @@ await blocked("shell", { command: "git -C /tmp reset --hard HEAD" }, /BLOCKED/)
 await blocked("shell", { command: "git branch -D topic" }, /BLOCKED/)
 await blocked("shell", { command: "git push --force origin topic" }, /BLOCKED/)
 await blocked("shell", { command: "git push origin main" }, /BLOCKED/)
+await blocked("shell", { command: "git push origin topic" }, /BLOCKED/)
 await blocked("write", { path: "big.txt", content: big }, /BLOCKED/)
 await call("shell", { command: "git status" })
 await call("shell", { command: "git stash push" })

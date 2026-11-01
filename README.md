@@ -97,7 +97,7 @@ This touches only `~/.config/opencode`:
 - `opencode/opencode.json` holds `model`, `agents`, `permissions` and `policies` (OpenCode v2 format). Install merges those four keys into the live file and keeps everything else, such as providers. `sync` and `promote` copy only those four keys back.
 - The default model is set twice. The root `model` cannot carry an effort level, so `agents.build` and `agents.plan` select `claude-agent/opus#high`.
 - `opencode/agents/` holds the OpenCode versions of `claude/agents/`. Keep the description and prompt the same in both; only the settings above them differ. Check with `node opencode/agents.test.mjs`.
-- `opencode/plugins/ccsetup-guardrails.js` runs `~/.claude/hooks/block-dangerous-git.sh`, `push-gate.sh` and `token-limit.sh` on shell, write and edit calls. It blocks if a script or `jq` is missing, or if a script fails.
+- `opencode/plugins/ccsetup-guardrails.js` runs `block-dangerous-git.sh` and `token-limit.sh` on shell, write and edit calls. Install copies them from `claude/hooks/` to `~/.config/opencode/guardrails/`, so this works on a machine whatever its `~/.claude` holds. `sync` skips those copies: edit the scripts in `claude/hooks/`, then install again. It blocks if a script or `jq` is missing, or if a script fails.
 - `opencode/plugins/verbosity-toggle/` makes `ctrl+y` switch transcript verbosity between low and medium. It edits `session.verbosity` in `~/.config/opencode/cli.json`. Test with `node opencode/verbosity-toggle.test.mjs`.
 
 Test with `node opencode/guardrails.test.mjs`.

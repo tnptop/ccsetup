@@ -67,6 +67,8 @@ run() { if [ "$DRY" = 1 ]; then log "  dry: $*"; else "$@"; fi; }
 opencode_pairs() {
   echo "opencode/opencode.json|$OPENCODE/opencode.json"
   echo "opencode/plugins/ccsetup-guardrails.js|$OPENCODE/plugins/ccsetup-guardrails.js"
+  echo "claude/hooks/block-dangerous-git.sh|$OPENCODE/guardrails/block-dangerous-git.sh"
+  echo "claude/hooks/token-limit.sh|$OPENCODE/guardrails/token-limit.sh"
   echo "opencode/plugins/verbosity-toggle|$OPENCODE/plugins/verbosity-toggle"
   echo "opencode/agents|$OPENCODE/agents"
   echo "shared/AGENTS.md|$OPENCODE/AGENTS.md"
@@ -389,8 +391,8 @@ case "$MODE" in
     BACKUP="$REPO/.sync-backup"   # repo side is under git; no backup needed
     log "syncing \$HOME -> repo"
     while IFS='|' read -r src dst; do
-      # shared/AGENTS.md has three home copies. Only the Claude one syncs back, so a stale copy cannot win.
-      case "$dst" in "$CODEX/AGENTS.md"|"$OPENCODE/AGENTS.md") continue ;; esac
+      # These files have more than one home copy. Only the Claude one syncs back, so a stale copy cannot win.
+      case "$dst" in "$CODEX/AGENTS.md"|"$OPENCODE/AGENTS.md"|"$OPENCODE/guardrails/"*) continue ;; esac
       [ -e "$dst" ] || { log "  skip $dst (missing on this machine)"; continue; }
       case "$src" in
         claude/settings.json) sync_settings ;;
@@ -435,6 +437,8 @@ case "$MODE" in
     done < <(pairs)
     ;;
   opencode)
+    # The guardrail plugin blocks every checked call without jq, so stop here instead.
+    command -v jq >/dev/null 2>&1 || { log "missing tool: jq (brew install jq)"; exit 1; }
     log "installing OpenCode config repo -> \$HOME (backups: $BACKUP)"
     install_opencode
     log "done. Check with: opencode debug config"
