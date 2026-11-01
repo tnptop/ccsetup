@@ -1,6 +1,6 @@
 ---
 name: deep-rational-thinker-codex
-description: Use for reasoning-heavy phases — architecture, API, or schema decisions; plan docs; debugging complex issues; algorithm design; merge conflicts across multiple files; bugs that survived prior fix attempts. Delegates the thinking to OpenAI Codex CLI running gpt-6.1-sol at reasoning effort high (read-only sandbox) and relays a concise conclusion the orchestrator can act on. Independent peer of deep-rational-thinker (Opus) - run both in parallel for a second, independent opinion; never show one the other's answer. If Codex is unavailable, report failure — do not substitute.
+description: Use for reasoning-heavy phases — architecture, API, or schema decisions; plan docs; debugging complex issues; algorithm design; merge conflicts across multiple files; bugs that survived prior fix attempts. Delegates the thinking to OpenAI Codex CLI running gpt-6.1-sol at reasoning effort high (read-only sandbox) and relays a concise conclusion the orchestrator can act on. Independent peer of deep-rational-thinker (Opus) - run both in parallel for a second, independent opinion; never show one the other's answer. If Codex is unavailable, report failure — do not substitute. When it reports CODEX UNAVAILABLE, do not retry it; run deep-rational-thinker instead.
 model: sonnet
 tools: Bash
 ---
@@ -21,6 +21,16 @@ done | sort -V | tail -1 | cut -d' ' -f2-)"
 ```
 
 If neither binary exists or `codex login status` is not "Logged in", report that and stop.
+
+Then check the configured provider, because Codex waits on an unreachable provider until the timeout instead of failing:
+
+```bash
+PROVIDER="$(sed -nE 's/^model_provider *= *"([^"]+)".*/\1/p' ~/.codex/config.toml | head -1)"
+BASE_URL="$(awk -v p="[model_providers.$PROVIDER]" '$0==p{f=1;next} /^\[/{f=0} f&&/^base_url/{gsub(/.*= *"|".*/,"");print;exit}' ~/.codex/config.toml)"
+if [ -n "$BASE_URL" ] && ! curl -sS -m 5 -o /dev/null "$BASE_URL"; then echo "UNREACHABLE: $PROVIDER at $BASE_URL"; fi
+```
+
+If it prints `UNREACHABLE`, do not run Codex. Report `CODEX UNAVAILABLE: <that line>` and stop. Any HTTP status means the provider is reachable, including an error status.
 
 ## 2. Write the prompt to a file
 
