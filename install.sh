@@ -23,6 +23,8 @@ CLAUDE="$HOME/.claude"
 AGENTS="$HOME/.agents"
 OPENCODE="$HOME/.config/opencode"
 CODEX="$HOME/.codex"
+GHOSTTY_CONFIG="$HOME/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
+GHOSTTY_THEME="$HOME/.config/ghostty/themes/opencode"
 BACKUP_ROOT="$CLAUDE/backups"
 BACKUP="$BACKUP_ROOT/ccsetup-$(date +%Y%m%d-%H%M%S)"
 EXCLUDES=(--exclude .DS_Store --exclude '*.bak')
@@ -80,6 +82,8 @@ rules_pairs() {
 pairs() {
   opencode_pairs
   rules_pairs
+  echo "ghostty/config.ghostty|$GHOSTTY_CONFIG"
+  echo "ghostty/themes/opencode|$GHOSTTY_THEME"
   echo "claude/settings.json|$CLAUDE/settings.json"
   echo "claude/statusline-command.sh|$CLAUDE/statusline-command.sh"
   echo "claude/hooks|$CLAUDE/hooks"
@@ -200,6 +204,8 @@ promote accepts one of these (absolute, ~/-prefixed, or the repo-relative form):
   $OPENCODE/opencode.json          <-> opencode/opencode.json  (model, agents, permissions and policies only)
   $OPENCODE/plugins/<name>         <-> opencode/plugins/<name>
   $OPENCODE/agents/<name>.md       <-> opencode/agents/<name>.md
+  $GHOSTTY_CONFIG <-> ghostty/config.ghostty
+  $GHOSTTY_THEME <-> ghostty/themes/opencode
 EOF
 }
 
@@ -235,6 +241,10 @@ promote_resolve() {
       name="${p#"$OPENCODE"/plugins/}"; PR_REPO="opencode/plugins/$name" ;;
     "$OPENCODE/agents/"*.md)
       name="${p#"$OPENCODE"/agents/}"; PR_REPO="opencode/agents/$name" ;;
+    "$GHOSTTY_CONFIG")                 PR_REPO="ghostty/config.ghostty" ;;
+    "$GHOSTTY_THEME")                  PR_REPO="ghostty/themes/opencode" ;;
+    ghostty/config.ghostty)            PR_REPO="$p" ;;
+    ghostty/themes/opencode)           PR_REPO="$p" ;;
     opencode/opencode.json)            PR_REPO="$p" ;;
     opencode/plugins/*)                PR_REPO="$p" ;;
     opencode/agents/*.md)              PR_REPO="$p" ;;
@@ -275,6 +285,8 @@ promote_resolve() {
     dot-agents/.skill-lock.json)    PR_HOME="$AGENTS/.skill-lock.json" ;;
     workspace/colleague-output-style.md)
       PR_HOME="$HOME/workspace/colleague-output-style.md" ;;
+    ghostty/config.ghostty)         PR_HOME="$GHOSTTY_CONFIG" ;;
+    ghostty/themes/opencode)        PR_HOME="$GHOSTTY_THEME" ;;
     opencode/opencode.json)         PR_HOME="$OPENCODE/opencode.json" ;;
     opencode/plugins/*)
       name="${PR_REPO#opencode/plugins/}"; PR_HOME="$OPENCODE/plugins/$name" ;;

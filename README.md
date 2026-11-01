@@ -20,6 +20,8 @@ commit, and push.
 | `claude/skills/{park,claim-task,promote-to-shared}` | `~/.claude/skills/...` | Hand-written skills that live in `~/.claude/skills` |
 | `dot-agents/skills/` | `~/.agents/skills/` | Skills installed with the `skills` CLI, plus 4 hand-written ones. `~/.claude/skills/<name>` gets a relative symlink to each |
 | `dot-agents/.skill-lock.json` | `~/.agents/.skill-lock.json` | Lets `npx skills update` keep working |
+| `ghostty/config.ghostty` | `~/Library/Application Support/com.mitchellh.ghostty/config.ghostty` | macOS path. Needs the `font-monaspace` cask |
+| `ghostty/themes/opencode` | `~/.config/ghostty/themes/opencode` | Colors from OpenCode's built-in theme |
 | `workspace/colleague-output-style.md` | `~/workspace/colleague-output-style.md` | Referenced by `shared/AGENTS.md` |
 | `memory/<name>/` | `~/.claude/projects/<slug>/memory/` | `workspace` and `workspace-personal` today; `-` in the name means `/` under `$HOME`. Copied once, never overwritten. `sync` does not copy memory back; refresh by hand with `rsync` before a migration |
 
