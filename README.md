@@ -11,7 +11,8 @@ commit, and push.
 
 | Repo path | Copied to | Notes |
 |---|---|---|
-| `claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | Global instructions |
+| `shared/AGENTS.md` | `~/.claude/AGENTS.md`, `~/.codex/AGENTS.md`, `~/.config/opencode/AGENTS.md` | Rules for every tool. `sync` and `promote` read only the `~/.claude` copy |
+| `claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | Imports `AGENTS.md`, then adds the rules only Claude Code can follow |
 | `claude/settings.json` | `~/.claude/settings.json` | Machine-specific `autoMode.environment` is stripped |
 | `claude/hooks/` | `~/.claude/hooks/` | All hooks need `jq`. `token-limit-exclude` is the machine overlay for `token-limit.sh`; per-repo rules go in `<repo>/.claude/token-limit-exclude`. |
 | `claude/statusline-command.sh` | `~/.claude/statusline-command.sh` | Needs `jq` |
@@ -19,7 +20,9 @@ commit, and push.
 | `claude/skills/{park,claim-task,promote-to-shared}` | `~/.claude/skills/...` | Hand-written skills that live in `~/.claude/skills` |
 | `dot-agents/skills/` | `~/.agents/skills/` | Skills installed with the `skills` CLI, plus 4 hand-written ones. `~/.claude/skills/<name>` gets a relative symlink to each |
 | `dot-agents/.skill-lock.json` | `~/.agents/.skill-lock.json` | Lets `npx skills update` keep working |
-| `workspace/colleague-output-style.md` | `~/workspace/colleague-output-style.md` | Referenced by CLAUDE.md |
+| `ghostty/config.ghostty` | `~/Library/Application Support/com.mitchellh.ghostty/config.ghostty` | macOS path. Needs the `font-monaspace` cask |
+| `ghostty/themes/opencode` | `~/.config/ghostty/themes/opencode` | Colors from OpenCode's built-in theme |
+| `workspace/colleague-output-style.md` | `~/workspace/colleague-output-style.md` | Referenced by `shared/AGENTS.md` |
 | `memory/<name>/` | `~/.claude/projects/<slug>/memory/` | `workspace` and `workspace-personal` today; `-` in the name means `/` under `$HOME`. Copied once, never overwritten. `sync` does not copy memory back; refresh by hand with `rsync` before a migration |
 
 Not in the repo on purpose: `~/.claude.json` (login, machine ID), `settings.local.json`,
@@ -82,6 +85,24 @@ How to work with a machine branch:
 2. On the machine branch, run `git merge main`. Fix conflicts in favour of `main` unless the line is machine-only.
 3. Commit machine-only files directly on the machine branch. Never merge the machine branch into `main`.
 4. On a new machine, start from `main`, run `./install.sh`, then create `machine/<user>` for that machine's own state.
+
+## OpenCode
+
+OpenCode's Claude Agent provider ignores `~/.claude/settings.json` and turns Claude Code hooks off, so the guardrails need their own install:
+
+    ./install.sh opencode
+
+This touches only `~/.config/opencode`:
+
+- `opencode/opencode.json` holds `model`, `agents`, `permissions` and `policies` (OpenCode v2 format). Install merges those four keys into the live file and keeps everything else, such as providers. `sync` and `promote` copy only those four keys back.
+- The default model is set twice. The root `model` cannot carry an effort level, so `agents.build` and `agents.plan` select `claude-agent/opus#high`.
+- `opencode/agents/` holds the OpenCode versions of `claude/agents/`. Keep the description and prompt the same in both; only the settings above them differ. Check with `node opencode/agents.test.mjs`.
+- `opencode/plugins/ccsetup-guardrails.js` runs `block-dangerous-git.sh` and `token-limit.sh` on shell, write and edit calls. Install copies them from `claude/hooks/` to `~/.config/opencode/guardrails/`, so this works on a machine whatever its `~/.claude` holds. `sync` skips those copies: edit the scripts in `claude/hooks/`, then install again. It blocks if a script or `jq` is missing, or if a script fails.
+- `opencode/plugins/verbosity-toggle/` makes `ctrl+y` switch transcript verbosity between low and medium. It edits `session.verbosity` in `~/.config/opencode/cli.json`. Test with `node opencode/verbosity-toggle.test.mjs`.
+
+Test with `node opencode/guardrails.test.mjs`.
+
+These rules catch mistakes. They are not a sandbox: the policy patterns match command text, so a script file or a shell variable can still get past them, and text that only mentions a blocked command is blocked too. The patch tool skips the token limit.
 
 ## Windows
 

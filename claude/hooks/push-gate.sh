@@ -1,6 +1,6 @@
 #!/bin/bash
 # Push gate for the Claude Code PreToolUse(Bash) hook. bash 3.2, jq, perl, git.
-# Installed as ~/.claude/hooks/push-gate.sh by push-hook-lab/apply.sh; fixtures live in that lab.
+# Test: bash claude/hooks/push-gate.test.sh
 # It covers the push rules only; block-dangerous-git.sh keeps reset --hard, clean, branch -D,
 # checkout . and restore .
 
