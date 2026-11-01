@@ -2,7 +2,7 @@
 
 # Claude Code Guardrails
 
-The destructive git commands in Approval Rules are blocked by `~/.claude/hooks/block-dangerous-git.sh` and by `permissions.deny` rules in `~/.claude/settings.json`.
+The destructive git commands in Approval Rules are blocked by `~/.claude/hooks/block-dangerous-git.sh` and by `permissions.deny` rules in `~/.claude/settings.json`. `~/.claude/hooks/push-gate.sh` enforces the push limits there.
 
 # Task Anchor
 

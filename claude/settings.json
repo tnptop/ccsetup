@@ -1,7 +1,6 @@
 {
   "permissions": {
     "deny": [
-      "Bash(git push:*)",
       "Bash(git reset --hard:*)",
       "Bash(git clean:*)",
       "Bash(git branch -D:*)",
@@ -86,6 +85,10 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/block-dangerous-git.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/push-gate.sh"
           }
         ]
       },
