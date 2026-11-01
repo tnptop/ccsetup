@@ -1,7 +1,6 @@
 {
   "permissions": {
     "deny": [
-      "Bash(git push:*)",
       "Bash(git reset --hard:*)",
       "Bash(git clean:*)",
       "Bash(git branch -D:*)",
@@ -76,7 +75,9 @@
     "teach": "off",
     "git-guardrails-claude-code": "off",
     "handoff": "off",
-    "show-me": "off"
+    "show-me": "off",
+    "hf-cli": "off",
+    "typesafe-ai": "off"
   },
   "hooks": {
     "PreToolUse": [
@@ -86,6 +87,10 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/block-dangerous-git.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/push-gate.sh"
           }
         ]
       },
@@ -106,17 +111,80 @@
             "type": "command",
             "command": "~/.claude/hooks/task-anchor.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh view",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh last",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh",
+            "timeout": 5
           }
         ]
       }
     ],
     "SessionStart": [
       {
+        "matcher": "^(clear|compact|resume)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh view",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "^clear$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh last",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "hooks": [
           {
             "type": "command",
             "command": "~/.claude/hooks/keep-display-awake.sh",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh ctx",
+            "timeout": 5
           }
         ]
       }
@@ -151,7 +219,7 @@
   "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
-  "autoCompactEnabled": false,
+  "autoCompactEnabled": true,
   "agentPushNotifEnabled": true,
   "autoMode": {
     "environment": [
@@ -181,5 +249,7 @@
       "**Org-specific CLIs**: None configured"
     ]
   },
-  "cleanupPeriodDays": 365
+  "cleanupPeriodDays": 365,
+  "autoCompactWindow": 300000,
+  "idleCompaction": false
 }
