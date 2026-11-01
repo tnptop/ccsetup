@@ -13,7 +13,7 @@ commit, and push.
 |---|---|---|
 | `claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | Global instructions |
 | `claude/settings.json` | `~/.claude/settings.json` | Machine-specific `autoMode.environment` is stripped |
-| `claude/hooks/` | `~/.claude/hooks/` | Both hooks need `jq` |
+| `claude/hooks/` | `~/.claude/hooks/` | All hooks need `jq`. `token-limit-exclude` is the machine overlay for `token-limit.sh`; per-repo rules go in `<repo>/.claude/token-limit-exclude`. |
 | `claude/statusline-command.sh` | `~/.claude/statusline-command.sh` | Needs `jq` |
 | `claude/agents/*.md` | `~/.claude/agents/*.md` | All agents are copied |
 | `claude/skills/{park,claim-task,promote-to-shared}` | `~/.claude/skills/...` | Hand-written skills that live in `~/.claude/skills` |

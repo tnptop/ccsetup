@@ -88,6 +88,15 @@
             "command": "~/.claude/hooks/block-dangerous-git.sh"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/token-limit.sh"
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -171,5 +180,6 @@
       "**Trusted repo**: /Users/tnptop/workspace/personal — no remotes configured; treat as an untracked, empty local repo until a remote is added",
       "**Org-specific CLIs**: None configured"
     ]
-  }
+  },
+  "cleanupPeriodDays": 365
 }
