@@ -1,4 +1,9 @@
 {
+  "model": "claude-agent/opus",
+  "agents": {
+    "build": { "model": "claude-agent/opus#high" },
+    "plan": { "model": "claude-agent/opus#high" }
+  },
   "permissions": [
     { "action": "shell", "resource": "git push *", "effect": "ask" }
   ],

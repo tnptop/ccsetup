@@ -92,7 +92,9 @@ OpenCode's Claude Agent provider ignores `~/.claude/settings.json` and turns Cla
 
 This touches only `~/.config/opencode`:
 
-- `opencode/opencode.json` holds `permissions` and `policies` (OpenCode v2 format). Install merges those two keys into the live file and keeps everything else, such as providers. `sync` and `promote` copy only those two keys back.
+- `opencode/opencode.json` holds `model`, `agents`, `permissions` and `policies` (OpenCode v2 format). Install merges those four keys into the live file and keeps everything else, such as providers. `sync` and `promote` copy only those four keys back.
+- The default model is set twice. The root `model` cannot carry an effort level, so `agents.build` and `agents.plan` select `claude-agent/opus#high`.
+- `opencode/agents/` holds the OpenCode versions of `claude/agents/`. Keep the description and prompt the same in both; only the settings above them differ. Check with `node opencode/agents.test.mjs`.
 - `opencode/plugins/ccsetup-guardrails.js` runs `~/.claude/hooks/block-dangerous-git.sh`, `push-gate.sh` and `token-limit.sh` on shell, write and edit calls. It blocks if a script or `jq` is missing, or if a script fails.
 
 Test with `node opencode/guardrails.test.mjs`.

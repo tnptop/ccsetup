@@ -10,7 +10,7 @@
 #   ./install.sh promote <path>... copy only these paths $HOME -> repo (new files ok)
 #   ./install.sh --check           list files that differ between repo and $HOME
 #   ./install.sh --dry-run         with install, sync, or promote: print, touch nothing
-#   ./install.sh opencode          copy only the OpenCode config, rules and guardrail plugin repo -> $HOME
+#   ./install.sh opencode          copy only the OpenCode config, agents, rules and guardrail plugin repo -> $HOME
 #   ./install.sh rules             copy only the shared rules and CLAUDE.md repo -> $HOME
 #   ./install.sh plugins           add marketplaces and install plugins via `claude`
 #   ./install.sh --rollback [d]    restore a backup dir (default: the newest one)
@@ -65,6 +65,7 @@ run() { if [ "$DRY" = 1 ]; then log "  dry: $*"; else "$@"; fi; }
 opencode_pairs() {
   echo "opencode/opencode.json|$OPENCODE/opencode.json"
   echo "opencode/plugins/ccsetup-guardrails.js|$OPENCODE/plugins/ccsetup-guardrails.js"
+  echo "opencode/agents|$OPENCODE/agents"
   echo "shared/AGENTS.md|$OPENCODE/AGENTS.md"
 }
 
@@ -155,13 +156,14 @@ sync_settings() {
   fi
 }
 
-# opencode.json: the repo owns only "permissions" and "policies". Everything else in the
+# opencode.json: the repo owns only the keys in OPENCODE_KEYS. Everything else in the
 # live file (providers, for example) belongs to the machine and is kept.
+OPENCODE_KEYS='{model, agents, permissions, policies}'
 install_opencode_config() {
   local src="$REPO/opencode/opencode.json" dst="$OPENCODE/opencode.json" tmp
   tmp=$(mktemp)
   if [ -f "$dst" ]; then
-    jq -s '.[0] + {permissions: .[1].permissions, policies: .[1].policies}' "$dst" "$src" > "$tmp"
+    jq -s ".[0] + (.[1] | $OPENCODE_KEYS)" "$dst" "$src" > "$tmp"
   else
     jq '{"$schema": "https://opencode.ai/config.json"} + .' "$src" > "$tmp"
   fi
@@ -170,11 +172,11 @@ install_opencode_config() {
 sync_opencode_config() {
   local tmp
   tmp=$(mktemp)
-  jq '{permissions, policies}' "$OPENCODE/opencode.json" > "$tmp"
+  jq "$OPENCODE_KEYS" "$OPENCODE/opencode.json" > "$tmp"
   copy "$tmp" "$REPO/opencode/opencode.json"; rm -f "$tmp"
 }
 opencode_config_same() {
-  cmp -s <(jq -S '{permissions, policies}' "$OPENCODE/opencode.json") <(jq -S '{permissions, policies}' "$REPO/opencode/opencode.json")
+  cmp -s <(jq -S "$OPENCODE_KEYS" "$OPENCODE/opencode.json") <(jq -S "$OPENCODE_KEYS" "$REPO/opencode/opencode.json")
 }
 install_opencode() {
   while IFS='|' read -r src dst; do
@@ -195,8 +197,9 @@ promote accepts one of these (absolute, ~/-prefixed, or the repo-relative form):
   $AGENTS/skills/<name>            <-> dot-agents/skills/<name>
   $AGENTS/.skill-lock.json         <-> dot-agents/.skill-lock.json
   $HOME/workspace/colleague-output-style.md <-> workspace/colleague-output-style.md
-  $OPENCODE/opencode.json          <-> opencode/opencode.json  (permissions and policies only)
+  $OPENCODE/opencode.json          <-> opencode/opencode.json  (model, agents, permissions and policies only)
   $OPENCODE/plugins/<name>         <-> opencode/plugins/<name>
+  $OPENCODE/agents/<name>.md       <-> opencode/agents/<name>.md
 EOF
 }
 
@@ -230,8 +233,11 @@ promote_resolve() {
     "$OPENCODE/opencode.json")         PR_REPO="opencode/opencode.json" ;;
     "$OPENCODE/plugins/"*)
       name="${p#"$OPENCODE"/plugins/}"; PR_REPO="opencode/plugins/$name" ;;
+    "$OPENCODE/agents/"*.md)
+      name="${p#"$OPENCODE"/agents/}"; PR_REPO="opencode/agents/$name" ;;
     opencode/opencode.json)            PR_REPO="$p" ;;
     opencode/plugins/*)                PR_REPO="$p" ;;
+    opencode/agents/*.md)              PR_REPO="$p" ;;
     claude/CLAUDE.md)                  PR_REPO="$p" ;;
     shared/AGENTS.md)                  PR_REPO="$p" ;;
     claude/settings.json)              PR_REPO="$p" ;;
@@ -272,6 +278,8 @@ promote_resolve() {
     opencode/opencode.json)         PR_HOME="$OPENCODE/opencode.json" ;;
     opencode/plugins/*)
       name="${PR_REPO#opencode/plugins/}"; PR_HOME="$OPENCODE/plugins/$name" ;;
+    opencode/agents/*.md)
+      name="${PR_REPO#opencode/agents/}"; PR_HOME="$OPENCODE/agents/$name" ;;
   esac
   if [ ! -e "$PR_HOME" ]; then
     log "error: $PR_HOME does not exist"
