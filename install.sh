@@ -67,6 +67,7 @@ run() { if [ "$DRY" = 1 ]; then log "  dry: $*"; else "$@"; fi; }
 opencode_pairs() {
   echo "opencode/opencode.json|$OPENCODE/opencode.json"
   echo "opencode/plugins/ccsetup-guardrails.js|$OPENCODE/plugins/ccsetup-guardrails.js"
+  echo "opencode/plugins/verbosity-toggle|$OPENCODE/plugins/verbosity-toggle"
   echo "opencode/agents|$OPENCODE/agents"
   echo "shared/AGENTS.md|$OPENCODE/AGENTS.md"
 }
