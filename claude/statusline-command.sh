@@ -28,7 +28,17 @@ if [ -n "$owned" ]; then
   task="$(basename "$owned" .md) | $line1"
 else
   project_dir=$(printf '%s' "$input" | jq -r '.workspace.project_dir // empty')
-  project_slug=$(printf '%s' "${project_dir:-$cwd}" | sed 's/[^A-Za-z0-9]/-/g')
+  root="${project_dir:-$cwd}"
+  # Same key as task-anchor.sh: inside a linked git worktree, the main
+  # checkout plus the same subdirectory.
+  { read -r gd; read -r cd; read -r prefix; } <<< "$(git -C "$root" rev-parse --path-format=absolute --git-dir --git-common-dir --show-prefix 2>/dev/null)"
+  if [ -n "$gd" ] && [ -n "$cd" ] && [ "$gd" != "$cd" ]; then
+    root=$cd
+    [ "$(basename "$cd")" = .git ] && root=$(dirname "$cd")
+    prefix=${prefix%/}
+    root="$root${prefix:+/$prefix}"
+  fi
+  project_slug=$(printf '%s' "$root" | sed 's/[^A-Za-z0-9]/-/g')
   count=$(find "$anchors/$project_slug" -maxdepth 1 -name '*.md' ! -name INDEX.md 2>/dev/null | wc -l | tr -d ' ')
   task="no task claimed (${count} in index)"
 fi

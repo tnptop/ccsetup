@@ -10,9 +10,9 @@ A tool result tagged `context ~Nk` reports the prompt size; at 200k or more, wri
 
 # Task Anchor
 
-A UserPromptSubmit hook (`~/.claude/hooks/task-anchor.sh`) injects the declared task from `~/.claude/task-anchors/<cwd-slug>/` into every prompt, together with the claim, sidetrack, and park instructions; follow them. When a prompt diverges from the anchor, flag the possible sidetrack in one line and ask: park it or switch the anchor?
+A UserPromptSubmit hook (`~/.claude/hooks/task-anchor.sh`) injects the declared task from `~/.claude/task-anchors/<root-slug>/` into every prompt (its `project_root:` line names that folder), together with the claim, sidetrack, and park instructions; follow them. When a prompt diverges from the anchor, flag the possible sidetrack in one line and ask: park it or switch the anchor?
 
-Hook-disabled fallback (no TASK ANCHOR block in my prompts): on your first turn, read `~/.claude/task-anchors/<cwd-slug>/` (cwd-slug = cwd with every non-alphanumeric character replaced by `-`; skip INDEX.md), apply the same anchor rules, and rewrite the task's `heartbeat:` line to the current ISO time at each checkpoint.
+Hook-disabled fallback (no TASK ANCHOR block in my prompts): on your first turn, read `~/.claude/task-anchors/<root-slug>/` (root-slug = the project root with every non-alphanumeric character replaced by `-`; skip INDEX.md). The project root is cwd. Inside a linked git worktree, it is the main checkout path plus the same subdirectory. Then apply the same anchor rules, and rewrite the task's `heartbeat:` line to the current ISO time at each checkpoint.
 
 Closing turns (LR 0015): while this session owns an ACTIVE anchor, a turn that ends the work ends with one literal next action: `/park closed` when done, otherwise tell me to type `/clear` (in omp: `/park`, `/park next`, `/park switch <task>`, or `/park closed`). Never "open a fresh session" in that slot, and never write "parked" or "anchor updated" in prose unless `/park` ran in this session.
 

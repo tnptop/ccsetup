@@ -8,7 +8,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 HOOK="${1:-$here/../task-anchor.sh}"
 ORACLE="${ORACLE:-$HOME/.claude/hooks/task-anchor.sh}"
 LANE_JS="$here/lane.ts"
-tmp=$(mktemp -d)
+# pwd -P: mktemp says /var, git says /private/var
+tmp=$(cd "$(mktemp -d)" && pwd -P)
 # a symlink, not the plan's cp: macOS kills a copied system binary (SIGKILL,
 # code signing)
 ln -s /bin/sleep "$tmp/claude"
@@ -37,11 +38,12 @@ t() {
   fi
 }
 
-# run <hook> <json> [arg]: the hook in the temp world; harness pid $H
+# run <hook> <json> [arg]: the hook in the temp world; harness pid $H;
+# project dir $PD (default $P)
 run() {
   local s=$1 j=$2
   shift 2
-  printf '%s' "$j" | HOME="$tmp/home" LANES_ROOT="$tmp/lanes" CLAUDE_PROJECT_DIR="$P" CLAUDE_PID="${PID_OF:-$H}" \
+  printf '%s' "$j" | HOME="$tmp/home" LANES_ROOT="$tmp/lanes" CLAUDE_PROJECT_DIR="${PD:-$P}" CLAUDE_PID="${PID_OF:-$H}" \
     LANE_TS="${LANE_TS_T:-$LANE_JS}" bash "$s" "$@"
 }
 
@@ -322,6 +324,33 @@ o=$(TMPDIR="$tmp/ctxc" run "$HOOK" "$(ptu "$TC")" ctx)
 t "compact_boundary: PostToolUse ctx prints context ~27k" '[ "$(printf %s "$o" | jq -r .hookSpecificOutput.additionalContext)" = "context ~27k" ]'
 o=$(TMPDIR="$tmp/ctxc0" run "$HOOK" "$(ptu "$TC0")" ctx); rc=$?
 t "compact_boundary without compactMetadata: PostToolUse ctx exit 0, quiet" '[ $rc -eq 0 ] && [ -z "$o" ]'
+
+# Test 9: the key is the project root: inside a linked git worktree, the
+# main checkout plus the same subdirectory; else the project dir unchanged
+g() { git -C "$P" -c user.name=t -c user.email=t@t -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
+sl() { printf '%s' "$1" | sed 's/[^A-Za-z0-9]/-/g'; }
+rootline() { printf %s "$1" | jq -r .hookSpecificOutput.additionalContext | grep -qFx "project_root: $2 (anchor dir $tmp/home/.claude/task-anchors/$(sl "$2"))"; }
+W="$P/.claude/worktrees/w"
+g init -q && g commit -q --allow-empty -m init && g worktree add -q --detach "$W"
+mkdir -p "$P/sub" "$W/sub"
+anchors S1
+o=$(PD="$W" run "$HOOK" "$(ups S1 first "$T160")")
+t "worktree: owned task found in the main anchor dir" 'printf %s "$o" | jq -r .hookSpecificOutput.additionalContext | grep -qF "DECLARED TASK ANCHOR ($AD/t1.md"'
+out=$(PD="$W" STUB_MARKER="$tmp/marker3" LANE_TS_T="$tmp/stub.js" run "$HOOK" "$(stop_json "$T160")")
+for _ in $(seq 1 40); do [ -e "$tmp/marker3" ] && break; sleep 0.25; done
+t "worktree: Stop logs and builds in the main lanes dir, no worktree dirs" '[ "$(cat "$LD/t1/log")" = "$(printf "S1\t%s" "$T160")" ] && [ "$(cat "$tmp/marker3" 2>/dev/null)" = "build $P t1|" ] && [ ! -e "$tmp/lanes/$(sl "$W")" ] && [ ! -e "$tmp/home/.claude/task-anchors/$(sl "$W")" ]'
+o=$(PD="$P/sub" run "$HOOK" "$(ups S9 hi "$T10")")
+o2=$(PD="$W/sub" run "$HOOK" "$(ups S9 hi "$T10")")
+t "subdirectory: main checkout keeps \$P/sub, worktree subdir maps to \$P/sub" 'rootline "$o" "$P/sub" && rootline "$o2" "$P/sub"'
+mkdir -p "$tmp/nogit"
+for f in /usr/bin/* /bin/*; do [ "${f##*/}" = git ] || ln -sf "$f" "$tmp/nogit/"; done
+ln -sf "$(command -v jq)" "$tmp/nogit/jq"; ln -sf "$(command -v node)" "$tmp/nogit/node"
+o=$(PATH="$tmp/nogit" run "$HOOK" "$(ups S9 hi "$T10")"); rc=$?
+o2=$(PD="$W" PATH="$tmp/nogit" run "$HOOK" "$(ups S9 hi "$T10")")
+t "no git in PATH: the key stays the project dir" '[ $rc -eq 0 ] && [ ! -e "$tmp/nogit/git" ] && rootline "$o" "$P" && rootline "$o2" "$W"'
+o=$(run "$HOOK" "$(ups S1 hi "$T10")")
+o2=$(run "$HOOK" "$(ups S9 hi "$T10")")
+t "UserPromptSubmit: project_root line, owned and unowned" 'rootline "$o" "$P" && rootline "$o2" "$P"'
 
 echo "$fails failed"
 [ "$fails" -eq 0 ]
