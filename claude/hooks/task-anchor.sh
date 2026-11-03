@@ -1,6 +1,8 @@
 #!/bin/bash
 # task-anchor: inject the declared task so Claude can flag sidetracks.
-# Anchors: ~/.claude/task-anchors/<cwd-slug>/{INDEX.md,<task-slug>.md}
+# Anchors: ~/.claude/task-anchors/<root-slug>/{INDEX.md,<task-slug>.md}
+# root = the project root (project_root below); each prompt names its folder
+# on a project_root: line.
 # Lanes (uniichat lane design section 3): on in Claude Code; also Stop,
 # SessionEnd and SessionStart (arg view|last) call this, and UserPromptSubmit
 # with arg view|last (a fresh window's first owned prompt).
@@ -10,11 +12,8 @@ event=$(printf '%s' "$input" | jq -r '.hook_event_name // empty' 2>/dev/null)
 cwd="${CLAUDE_PROJECT_DIR:-}"
 [ -z "$cwd" ] && cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -z "$cwd" ] && cwd="$PWD"
-slug=$(printf '%s' "$cwd" | sed 's/[^A-Za-z0-9]/-/g')
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
-anchor_dir="$HOME/.claude/task-anchors/$slug"
 transcript_path=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null)
-lanes_dir="${LANES_ROOT:-$HOME/.claude/lanes}/$slug"
 LANE_TS="${LANE_TS:-$HOME/.claude/hooks/lanes/lane.ts}"
 
 # Lanes off (omp until its port, or no node): the old /park flavors.
@@ -24,6 +23,24 @@ OWNED_INSTRUCTION='Compare this prompt against the anchor. If it diverges, say s
 LANE_INSTRUCTION='Compare this prompt against the anchor. If it diverges, say so in one line and ask: stay on this lane, or take the other task to its own window (/claim-task there)? For context, tell the user to type /clear; this lane comes back on its own. When the task finishes: read ~/.claude/skills/park/SKILL.md and run its closed flavor (close ritual, delete task file, drop INDEX row). Never rewrite the STATE line to CLOSED by hand and never leave a task file whose line 1 says CLOSED.'
 SESSION_LINE="session_id: ${session_id} (use this exact value as owner: when /claim-task writes a claim; do not derive it from transcript files)"
 UNOWNED_INSTRUCTION='No claimed task in this session. If the request matches a claimed row with a live lease: stop and ask the user (continue in that session, or steal). If it matches a free or stale row: run /claim-task <slug>. If it matches nothing: run /claim-task new "<task text>". If unsure, run /claim-task with no argument.'
+
+# The key for $1: inside a linked git worktree, the main checkout plus the
+# same subdirectory (a worktree's own folder is orphaned when it is removed,
+# and EnterWorktree leaves CLAUDE_PROJECT_DIR on the main checkout). Else
+# (main checkout, submodule, not git, no git) $1 unchanged.
+project_root() {
+  local out= gd= cd= prefix= root=
+  out=$(git -C "$1" rev-parse --path-format=absolute --git-dir --git-common-dir --show-prefix 2>/dev/null) || out=
+  { read -r gd; read -r cd; read -r prefix; } <<< "$out"
+  if [ -z "$gd" ] || [ -z "$cd" ] || [ "$gd" = "$cd" ]; then
+    printf '%s' "$1"
+    return
+  fi
+  root=$cd
+  [ "$(basename "$cd")" = .git ] && root=$(dirname "$cd")
+  prefix=${prefix%/}
+  printf '%s' "$root${prefix:+/$prefix}"
+}
 
 iso_now() {
   date +%Y-%m-%dT%H:%M:%S%z | sed 's/\([+-][0-9][0-9]\)\([0-9][0-9]\)$/\1:\2/'
@@ -444,6 +461,18 @@ case "$event" in
     fi 2>/dev/null
     exit 0
     ;;
+esac
+
+# After PostToolUse: it never reads the key, so it skips the git call.
+cwd=$(project_root "$cwd")
+slug=$(printf '%s' "$cwd" | sed 's/[^A-Za-z0-9]/-/g')
+anchor_dir="$HOME/.claude/task-anchors/$slug"
+lanes_dir="${LANES_ROOT:-$HOME/.claude/lanes}/$slug"
+ROOT_LINE="project_root: ${cwd} (anchor dir ${anchor_dir})"
+SESSION_LINE="${SESSION_LINE}
+${ROOT_LINE}"
+
+case "$event" in
   Stop|SessionEnd|SessionStart)
     if lanes_on && [ -d "$anchor_dir" ]; then
       case "$event" in
@@ -511,6 +540,7 @@ if [ -d "$anchor_dir" ]; then
     build_nudges
     ctx="DECLARED TASK ANCHOR ($owned_file): $anchor
 session_id: ${session_id}
+${ROOT_LINE}
 ${instruction}"
     if [ -n "$nudges" ]; then
       ctx="${ctx}
