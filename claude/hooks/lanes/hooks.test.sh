@@ -262,6 +262,16 @@ t "SessionStart resume leaves a dead other owner's lane untouched" '[ -z "$v" ] 
 v=$(run "$HOOK" "$(start S9 clear)" view)
 t "SessionStart clear with no claim on this pid does nothing" '[ -z "$v" ] && [ "$(snap)" = "$before" ]'
 
+# plain /park in Claude Code: PARKED, no owner/heartbeat/pid/last_session;
+# neither /clear in the same window nor --resume of the old session takes it
+anchors
+printf 'STATE 2026-10-20 | PARKED | next: do x | step 2/5\nprose one\n' > "$AD/t1.md"
+lanedata 2 2
+cp "$AD/t1.md" "$tmp/parked.md"
+v=$(run "$HOOK" "$(start S2 clear)" view)
+l=$(run "$HOOK" "$(start S1 resume)" view)
+t "SessionStart clear and resume leave a /park-ed task alone" '[ -z "$v$l" ] && cmp -s "$AD/t1.md" "$tmp/parked.md"'
+
 anchors S1
 lanedata 2 2
 before=$(snap)

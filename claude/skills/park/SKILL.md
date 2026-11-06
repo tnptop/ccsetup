@@ -1,12 +1,12 @@
 ---
 name: park
-description: Close the current session cleanly — persist decisions to disk, rewrite the owned task file and INDEX, release the claim, prep the commit, print the resume recipe. Claude Code has only park closed (task finished - close ritual — remove lane, delete task file + INDEX row); for a fresh context there the user types /clear and the lane comes back on its own. omp only (until its lanes port) - park (tomorrow), park next (same task, fresh session now), park switch <new task> (new task via /claim-task new).
+description: Close the current session cleanly — persist decisions to disk, rewrite the owned task file and INDEX, release the claim, prep the commit, print the resume recipe. Claude Code has park (set the task aside so this window can take another - then /clear and /claim-task) and park closed (task finished - close ritual — remove lane, delete task file + INDEX row); for a fresh context on the same task the user types /clear and the lane comes back on its own. In omp plain park means tomorrow. omp only (until its lanes port) - park next (same task, fresh session now), park switch <new task> (new task via /claim-task new).
 argument-hint: "[next | switch <new task text> | closed]"
 disable-model-invocation: true
 ---
 
 Flavor = first word of the argument: none → TOMORROW, `next` → NEXT, `switch` → SWITCH (rest = new task text), `closed` → CLOSED (task finished).
-TOMORROW, NEXT and SWITCH are omp-only (until omp gets lanes; omp sets `OMPCODE=1`). In Claude Code only CLOSED exists: for a fresh context the user types `/clear` and the lane comes back on its own. A Claude Code session that gets another flavor prints one line saying so ("in Claude Code only `/park closed` exists; for a fresh context type `/clear`") and stops.
+NEXT and SWITCH are omp-only (until omp gets lanes; omp sets `OMPCODE=1`). In Claude Code, TOMORROW (plain `/park`) means: set the owned task aside so this window can take another task. CLOSED means the task is finished. For a fresh context on the same task the user types `/clear` and the lane comes back on its own. A Claude Code session that gets `next` or `switch` prints one line saying so ("in Claude Code only `/park` (set the task aside) and `/park closed` exist; for a fresh context on the same task type `/clear`") and stops.
 Dir and project_root = the claim-task skill's §1 Paths rule (`~/.claude/skills/claim-task/SKILL.md`): the anchor dir and `<root>` on the hook's `project_root:` line, used verbatim; computed by hand only when no such line exists (hook disabled).
 Target = the task file in that dir whose `owner:` line equals this session's id.
 Session id = the value on the `session_id:` line that the task-anchor hook injects into every prompt (inside the TASK ANCHOR block). Use it verbatim. Fallback only when no such line exists in this prompt (hook disabled): read the newest file under `~/.claude/projects/<cwd-slug>/` (cwd-slug = the RAW cwd with every non-alphanumeric char replaced by `-`, not project_root: this folder is Claude Code's own key) whose name matches `<uuid>.jsonl` and use that uuid; if two such files were modified within the last 5 minutes, ask the user which session this is instead of guessing.
@@ -17,7 +17,7 @@ Live-claimed = the claim-task skill's §3 Lease rule (`~/.claude/skills/claim-ta
 ## 1. Flavor check (before writing anything)
 Gather: target line 1, `git status --short`, open questions in this conversation, any background process or log path mentioned (LR 0009 rule), local time.
 Challenge the flavor with ONE AskUserQuestion only if evidence conflicts:
-- TOMORROW but anchor status ACTIVE with a known next step and time < 17:00 → "did you mean `/park next`?"
+- TOMORROW but anchor status ACTIVE with a known next step and time < 17:00 → "did you mean `/park next`?" (omp only; never in Claude Code, which has no `/park next`)
 - NEXT or TOMORROW but the task is finished (no next step left) → "did you mean `/park closed`?"
 - CLOSED but the STATE line names a real next step, or `git status --short` shows uncommitted work belonging to this task → "task not finished — plain `/park` instead?"
 - SWITCH with uncommitted work belonging to the current anchor → "checkpoint current task first?"
@@ -36,17 +36,19 @@ Line 1, exact form (the hook parses it; `step` field only when a plan file gives
 `STATE <ISO date> | <ACTIVE|PARKED|CLOSED> | next: <one action> | step <N/M>`
 Lines 2+: prose, ≤ 800 chars. Keep any `worktree:` line.
 
-Then release the claim on EVERY flavor that keeps the file (TOMORROW, NEXT, SWITCH):
+Then release the claim on EVERY flavor that keeps the file (TOMORROW, NEXT, SWITCH). Also drop `last_session:`: SessionEnd writes it, and a leftover one makes `claude --resume` of this session take the parked task again.
 
 ```bash
 if sed --version >/dev/null 2>&1; then
   sed -i '/^owner:/d' "$file"
   sed -i '/^heartbeat:/d' "$file"
   sed -i '/^pid:/d' "$file"
+  sed -i '/^last_session:/d' "$file"
 else
   sed -i '' '/^owner:/d' "$file"
   sed -i '' '/^heartbeat:/d' "$file"
   sed -i '' '/^pid:/d' "$file"
+  sed -i '' '/^last_session:/d' "$file"
 fi
 ```
 
@@ -89,7 +91,7 @@ List unstaged files, stage the ones belonging to this task, run the `generate-co
 
 ## 5. Resume recipe + oracle
 Print: cwd, project_root, target line 1, `worktree:` path if the task file has one, log paths of anything still running, and the first command for the next session.
-NEXT and TOMORROW: first command is `/claim-task <slug>`. CLOSED: first command is `/claim-task` with no argument (pick the next task from INDEX).
+NEXT and TOMORROW: first command is `/claim-task <slug>`. TOMORROW in Claude Code instead: the next commands are `/clear`, then `/claim-task` (no argument, or `new "<text>"`) to take the other task. Its oracle: the task file has no `owner:`, `pid:`, `heartbeat:` or `last_session:` line, and the INDEX row says PARKED; if not, say "not parked" and name what is missing. CLOSED: first command is `/claim-task` with no argument (pick the next task from INDEX).
 Verify and report plainly: target mtime is now; `git status` is clean OR every dirty file is named in the worklog; the task file (if it still exists) has no `owner:` line; the INDEX row status matches the STATE line. If the owner line remains or the INDEX status does not match STATE, say "not parked" and what is missing.
 Also: if the task file still exists and has a `worktree:` line, verify the path exists and report it. If the flavor was CLOSED, verify `git -C <project_root> worktree list` no longer shows the path; if it still shows, say "lane not removed".
 CLOSED oracle: the task file no longer exists, `grep "^- <slug> | " INDEX.md` finds nothing, and the lane path (if any) is absent from `git -C <project_root> worktree list`. If any of the three still holds, say "not closed" and name which.
