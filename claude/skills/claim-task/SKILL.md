@@ -21,7 +21,7 @@ Run before argument handling.
 
 ## 3. Lease
 Live-claimed = has an `owner:` line AND a live lease. Otherwise free (no owner, or lease not live).
-- Task file has a `pid:` line: live = `kill -0 <pid>` works and the first word of `ps -p <pid> -o args=` (path stripped) is `claude` or `omp` (same rule as the hook). Age label: first 8 chars of owner, `pid <pid> live`.
+- Task file has a `pid:` line: live = `kill -0 <pid>` works and the first word of `ps -p <pid> -o args=` (path stripped) is `claude` or `omp` (same rule as the hook). On Windows (Git Bash) that check cannot work, because `ps` has no `-o` and `kill -0` does not see a Windows pid. There, live = either check passes: (a) `MSYS2_ARG_CONV_EXCL='*' tasklist /FI "PID eq <pid>" /NH /FO CSV` prints a row whose first field is `claude.exe` or `omp.exe`; (b) `kill -0 <pid>` works and the first word of `tr '\0' ' ' < /proc/<pid>/cmdline` (`/` or `\` directories and `.exe` stripped) is `claude` or `omp`. Age label: first 8 chars of owner, `pid <pid> live`.
 - No `pid:` line: live = a `heartbeat:` line less than 4 hours old (whole hours). Age label: first 8 chars of owner, `<N>h ago`. This fallback exists only for the hook-disabled mode in CLAUDE.md, where no hook writes `pid:`.
 
 ## 4. No argument

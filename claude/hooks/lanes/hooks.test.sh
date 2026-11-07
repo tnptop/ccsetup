@@ -9,16 +9,35 @@ HOOK="${1:-$here/../task-anchor.sh}"
 ORACLE="${ORACLE:-$HOME/.claude/hooks/task-anchor.sh}"
 LANE_JS="$here/lane.ts"
 tmp=$(mktemp -d)
+# Windows (Git Bash): nat is a path as Claude Code passes it (C:\...), args_of
+# reads /proc (ps has no -o). win is 1 for the Windows tests.
+win=
+case "${OSTYPE:-}" in
+  msys*|cygwin*)
+    win=1
+    nat() { cygpath -w "$1"; }
+    args_of() { tr '\0' ' ' < "/proc/$1/cmdline"; }
+    ;;
+  *)
+    nat() { printf '%s' "$1"; }
+    args_of() { ps -p "$1" -o args=; }
+    ;;
+esac
 # a symlink, not the plan's cp: macOS kills a copied system binary (SIGKILL,
 # code signing)
 ln -s /bin/sleep "$tmp/claude"
 "$tmp/claude" 300 & H=$!
 "$tmp/claude" 300 & H2=$!
-bash -c 'exit 0' & DEAD=$!
-wait "$DEAD"
-trap 'kill $H $H2 2>/dev/null; wait $H $H2 2>/dev/null; rm -rf "$tmp"' EXIT
+# Windows: a dead Cygwin pid must not be the number of a live claude.exe
+while :; do
+  bash -c 'exit 0' & DEAD=$!
+  wait "$DEAD"
+  [ -n "$win" ] && MSYS2_ARG_CONV_EXCL='*' tasklist /FI "PID eq $DEAD" /NH /FO CSV | grep -qiE '^"(claude|omp)\.exe"' || break
+done
+W=
+trap 'kill $H $H2 $W 2>/dev/null; wait $H $H2 $W 2>/dev/null; rm -rf "$tmp"' EXIT
 
-P="$tmp/proj"
+P=$(nat "$tmp/proj")
 mkdir -p "$P"
 slug=$(printf '%s' "$P" | sed 's/[^A-Za-z0-9]/-/g')
 AD="$tmp/home/.claude/task-anchors/$slug"
@@ -37,15 +56,16 @@ t() {
   fi
 }
 
-# run <hook> <json> [arg]: the hook in the temp world; harness pid $H
+# run <hook> <json> [arg]: the hook in the temp world; harness pid $H.
+# USERPROFILE: node's os.homedir() on Windows reads it and ignores HOME.
 run() {
   local s=$1 j=$2
   shift 2
-  printf '%s' "$j" | HOME="$tmp/home" LANES_ROOT="$tmp/lanes" CLAUDE_PROJECT_DIR="$P" CLAUDE_PID="${PID_OF:-$H}" \
+  printf '%s' "$j" | HOME="$tmp/home" USERPROFILE="$tmp/home" LANES_ROOT="$tmp/lanes" CLAUDE_PROJECT_DIR="$P" CLAUDE_PID="${PID_OF:-$H}" \
     LANE_TS="${LANE_TS_T:-$LANE_JS}" bash "$s" "$@"
 }
 
-a=$(ps -p "$H" -o args=)
+a=$(args_of "$H")
 t "fake harness is live, args start with claude" 'kill -0 $H && kill -0 $H2 && [ "$(basename "${a%% *}")" = claude ] && ! kill -0 $DEAD 2>/dev/null'
 
 sedi() {
@@ -59,9 +79,9 @@ iso() { date +%Y-%m-%dT%H:%M:%S%z; }
 usage() {
   printf '{"type":"assistant","message":{"usage":{"input_tokens":%s,"cache_read_input_tokens":%s,"cache_creation_input_tokens":0,"output_tokens":%s}}}\n' "$1" "$2" "$3" > "$4"
 }
-T160="$tmp/t160.jsonl"; usage 1000 159000 500 "$T160"
-T210="$tmp/t210.jsonl"; usage 1000 194000 15000 "$T210"
-T10="$tmp/t10.jsonl"; usage 1000 9000 100 "$T10"
+T160=$(nat "$tmp/t160.jsonl"); usage 1000 159000 500 "$T160"
+T210=$(nat "$tmp/t210.jsonl"); usage 1000 194000 15000 "$T210"
+T10=$(nat "$tmp/t10.jsonl"); usage 1000 9000 100 "$T10"
 
 # the anchor dir: t1 (owned by $1 when given), t2 claimed live elsewhere,
 # t3 stale; INDEX.md
@@ -86,7 +106,7 @@ snap() {
 # flip between Nh and N-1h at a second boundary
 mask() { sed -E -e 's/heartbeat: [0-9T:+-]+/heartbeat: X/' -e 's/last written [0-9]+h ago/last written Nh ago/'; }
 
-ups() { printf '{"hook_event_name":"UserPromptSubmit","session_id":"%s","prompt":"%s","cwd":"%s","transcript_path":"%s"}' "$1" "$2" "$P" "$3"; }
+ups() { printf '{"hook_event_name":"UserPromptSubmit","session_id":"%s","prompt":"%s","cwd":"%s","transcript_path":"%s"}' "$1" "$2" "${P//\\/\\\\}" "${3//\\/\\\\}"; }
 
 # Test 1: golden. Lanes off (OMPCODE=1, with and without a lanes dir): the
 # prompt hook's output and files match the live hook's; the lane events do
@@ -115,7 +135,7 @@ for lanes in "" '; mkdir -p "$LD/t1"'; do
   golden "unowned with INDEX" "anchors$lanes" "$(ups S9 hello "$T10")"
   golden "unowned, 160k" "anchors$lanes" "$(ups S9 hello "$T160")"
   golden "no anchor dir" "rm -rf \"\$tmp/home\" \"\$tmp/lanes\"; mkdir -p \"\$tmp/home\"$lanes" "$(ups S9 hello "$T10")"
-  quiet "Stop" "{\"hook_event_name\":\"Stop\",\"session_id\":\"S1\",\"transcript_path\":\"$T210\",\"last_assistant_message\":\"m\"}"
+  quiet "Stop" "{\"hook_event_name\":\"Stop\",\"session_id\":\"S1\",\"transcript_path\":\"${T210//\\/\\\\}\",\"last_assistant_message\":\"m\"}"
   quiet "SessionEnd" '{"hook_event_name":"SessionEnd","session_id":"S1","reason":"prompt_input_exit"}'
   quiet "SessionStart view" '{"hook_event_name":"SessionStart","session_id":"S2","source":"clear"}' view
   quiet "SessionStart last" '{"hook_event_name":"SessionStart","session_id":"S2","source":"clear"}' last
@@ -132,10 +152,10 @@ unset OMPCODE
 # Test 2: lanes on (Claude Code, no lanes dir needed): a session with no
 # claim makes no lanes dir; the prompt hook makes it, logs the session once,
 # keeps the prompt, nudges at 200k (not 150k), and reads leases by pid
-T250="$tmp/t250.jsonl"; usage 1000 249000 0 "$T250"
+T250=$(nat "$tmp/t250.jsonl"); usage 1000 249000 0 "$T250"
 anchors
 run "$HOOK" "$(ups S9 hi "$T10")" >/dev/null
-run "$HOOK" "{\"hook_event_name\":\"Stop\",\"session_id\":\"S9\",\"transcript_path\":\"$T10\"}" >/dev/null
+run "$HOOK" "{\"hook_event_name\":\"Stop\",\"session_id\":\"S9\",\"transcript_path\":\"${T10//\\/\\\\}\"}" >/dev/null
 t "no claim: no lanes dir made" '[ ! -e "$tmp/lanes" ]'
 anchors S1
 o=$(run "$HOOK" "$(ups S1 first "$T160")")
@@ -167,8 +187,9 @@ sedi -e "s/^pid: .*/pid: $DEAD/" -e "s/^heartbeat: .*/heartbeat: 2026-01-01T00:0
 mkdir -p "$LD/t1"
 printf 'S1\t%s\n' "$T160" > "$LD/t1/log"
 printf 'my prompt' > "$LD/t1/prompt"
+j=$(stop_json "$T160")
 t0=$(now)
-out=$(STUB_MARKER="$tmp/marker" LANE_TS_T="$tmp/stub.js" CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=x run "$HOOK" "$(stop_json "$T160")")
+out=$(STUB_MARKER="$tmp/marker" LANE_TS_T="$tmp/stub.js" CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=x run "$HOOK" "$j")
 rc=$?
 t1=$(now)
 t "Stop returns in under 1 s, exit 0, no output under 200k" '[ $rc -eq 0 ] && [ -z "$out" ] && perl -e "exit !($t1 - $t0 < 1)" && [ ! -e "$tmp/marker" ]'
@@ -183,6 +204,15 @@ ln -s "$(command -v jq)" "$tmp/bin/jq"
 out=$(PATH="$tmp/bin:/usr/bin:/bin" run "$HOOK" "$(stop_json "$T210")")
 rc=$?
 t "Stop with no node in PATH: exit 0, quiet" '[ $rc -eq 0 ] && [ -z "$out" ]'
+# the prompt reaches last.json as typed, and a long one still replaces it
+# (Windows: native jq, a command line of 32,767 chars)
+prompt_stop() { run "$HOOK" "$(ups S1 "$1" "$T160")" >/dev/null; LANE_TS_T="$tmp/stub.js" run "$HOOK" "$(stop_json "$T160")" >/dev/null; }
+prompt_stop '/clear'
+t "Stop's last.json: a prompt with a leading / is unchanged" 'jq -e ".prompt == \"/clear\"" "$LD/t1/last.json" >/dev/null'
+prompt_stop 'line one\nline two'
+t "Stop's last.json: a prompt of two lines is unchanged" 'jq -e ".prompt == \"line one\nline two\"" "$LD/t1/last.json" >/dev/null'
+prompt_stop "$(printf 'A%.0s' $(seq 1 40000))"
+t "Stop's last.json: a 40,000-char prompt replaces the last one" 'jq -e ".prompt | startswith(\"AAAAAAAA\")" "$LD/t1/last.json" >/dev/null'
 
 # Test 4: SessionEnd releases the claim and keeps the session; clear does not
 anchors S1
@@ -211,7 +241,8 @@ lanedata() {
   done
   jq -n --arg th "$(printf 'ภาษาไทย%.0s' $(seq 1 1500))" '{prompt:("PSTART " + $th), message:($th + " MEND"), transcript:"/t/s1.jsonl", date:"2026-10-22T11:00:00+0700"}' > "$LD/t1/last.json"
 }
-start() { printf '{"hook_event_name":"SessionStart","session_id":"%s","source":"%s","transcript_path":"%s"}' "$1" "$2" "$tmp/new.jsonl"; }
+TN=$(nat "$tmp/new.jsonl")
+start() { printf '{"hook_event_name":"SessionStart","session_id":"%s","source":"%s","transcript_path":"%s"}' "$1" "$2" "${TN//\\/\\\\}"; }
 ctxlen() { printf '%s' "$1" | jq -r '.hookSpecificOutput.additionalContext | length'; }
 
 anchors S1
@@ -280,10 +311,10 @@ l=$(run "$HOOK" "$(ups S1 hi "$T10")" last)
 t "UserPromptSubmit view: UserPromptSubmit JSON, view head, at most 10,000 chars" '[ "$(printf %s "$v" | jq -r .hookSpecificOutput.hookEventName)" = UserPromptSubmit ] && [ "$(ctxlen "$v")" -le 10000 ] && case "$(printf %s "$v" | jq -r .hookSpecificOutput.additionalContext)" in "LANE VIEW (inject view, lane t1)"*) true ;; *) false ;; esac'
 t "UserPromptSubmit last: UserPromptSubmit JSON, last head, at most 10,000 chars" '[ "$(printf %s "$l" | jq -r .hookSpecificOutput.hookEventName)" = UserPromptSubmit ] && [ "$(ctxlen "$l")" -le 10000 ] && case "$(printf %s "$l" | jq -r .hookSpecificOutput.additionalContext)" in "LANE LAST EXCHANGE (inject last, lane t1)"*) true ;; *) false ;; esac'
 t "UserPromptSubmit view|last: task file and lane dir unchanged" '[ "$(snap)" = "$before" ]'
-o=$(run "$HOOK" "$(ups S1 hi "$tmp/missing.jsonl")" view)
+o=$(run "$HOOK" "$(ups S1 hi "$(nat "$tmp/missing.jsonl")")" view)
 t "UserPromptSubmit view: missing transcript reads not injected" 'printf %s "$o" | grep -qF "LANE VIEW (inject view, lane t1)"'
-TV="$tmp/tv.jsonl"; cp "$T10" "$TV"; printf %s "$v" | hookctx >> "$TV"
-TL="$tmp/tl.jsonl"; cp "$T10" "$TL"; printf %s "$l" | hookctx >> "$TL"
+TV=$(nat "$tmp/tv.jsonl"); cp "$T10" "$TV"; printf %s "$v" | hookctx >> "$TV"
+TL=$(nat "$tmp/tl.jsonl"); cp "$T10" "$TL"; printf %s "$l" | hookctx >> "$TL"
 v2=$(run "$HOOK" "$(ups S1 hi "$TV")" view)
 l2=$(run "$HOOK" "$(ups S1 hi "$TV")" last)
 t "UserPromptSubmit: view head in transcript, view prints nothing, last still prints" '[ -z "$v2" ] && printf %s "$l2" | grep -qF "LANE LAST EXCHANGE (inject last, lane t1)"'
@@ -295,7 +326,7 @@ l2=$(run "$HOOK" "$(ups S9 hi "$T10")" last)
 t "UserPromptSubmit view|last: no owned claim, nothing printed or written" '[ -z "$v2$l2" ] && [ "$(snap)" = "$before" ]'
 
 # Test 7: PostToolUse ctx: the context size once per 25k bucket, any session
-ptu() { printf '{"hook_event_name":"PostToolUse","session_id":"S1","transcript_path":"%s"}' "$1"; }
+ptu() { printf '{"hook_event_name":"PostToolUse","session_id":"S1","transcript_path":"%s"}' "${1//\\/\\\\}"; }
 mkdir -p "$tmp/ctx"
 o=$(TMPDIR="$tmp/ctx" run "$HOOK" "$(ptu "$T160")" ctx)
 t "PostToolUse ctx: first call prints context ~160k" '[ "$(printf %s "$o" | jq -r .hookSpecificOutput.additionalContext)" = "context ~160k" ] && [ "$(printf %s "$o" | jq -r .hookSpecificOutput.hookEventName)" = PostToolUse ]'
@@ -307,10 +338,10 @@ o=$(TMPDIR="$tmp/ctx" run "$HOOK" "$(ptu "")" ctx); rc=$?
 t "PostToolUse ctx: empty transcript_path, exit 0, quiet" '[ $rc -eq 0 ] && [ -z "$o" ]'
 
 # Test 8: a compact_boundary after the last usage line means postTokens
-TU="$tmp/tu.jsonl"; usage 1000 249000 500 "$TU"
-TC="$tmp/tc.jsonl"; cp "$TU" "$TC"
+TU=$(nat "$tmp/tu.jsonl"); usage 1000 249000 500 "$TU"
+TC=$(nat "$tmp/tc.jsonl"); cp "$TU" "$TC"
 printf '%s\n' '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted","compactMetadata":{"trigger":"auto","preTokens":250000,"postTokens":27000}}' >> "$TC"
-TC0="$tmp/tc0.jsonl"; cp "$TU" "$TC0"
+TC0=$(nat "$tmp/tc0.jsonl"); cp "$TU" "$TC0"
 printf '%s\n' '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}' >> "$TC0"
 anchors S1
 o=$(run "$HOOK" "$(ups S1 hello "$TC")")
@@ -322,6 +353,68 @@ o=$(TMPDIR="$tmp/ctxc" run "$HOOK" "$(ptu "$TC")" ctx)
 t "compact_boundary: PostToolUse ctx prints context ~27k" '[ "$(printf %s "$o" | jq -r .hookSpecificOutput.additionalContext)" = "context ~27k" ]'
 o=$(TMPDIR="$tmp/ctxc0" run "$HOOK" "$(ptu "$TC0")" ctx); rc=$?
 t "compact_boundary without compactMetadata: PostToolUse ctx exit 0, quiet" '[ $rc -eq 0 ] && [ -z "$o" ]'
+
+# Test 9: with no CLAUDE_PID (omp), the claim's pid is the first harness
+# ancestor, past a parent that is not one. A bash named claude runs a bash that
+# runs the hook.
+mkdir -p "$tmp/hb"
+ln -s "$(command -v bash)" "$tmp/hb/claude"
+printf 'bash "$1" < "$2"\n:\n' > "$tmp/mid.sh"
+anchors S1
+sedi "s/^pid: .*/pid: $DEAD/" "$AD/t1.md"
+ups S1 hi "$T10" > "$tmp/in.json"
+HOME="$tmp/home" USERPROFILE="$tmp/home" LANES_ROOT="$tmp/lanes" CLAUDE_PROJECT_DIR="$P" CLAUDE_PID="" LANE_TS="$LANE_JS" \
+  "$tmp/hb/claude" -c 'echo $$ > "$1"; bash "$2" "$3" "$4" >/dev/null; :' _ "$tmp/hb.pid" "$tmp/mid.sh" "$HOOK" "$tmp/in.json"
+t "no CLAUDE_PID: pid is the harness ancestor" 'grep -qx "pid: $(cat "$tmp/hb.pid")" "$AD/t1.md"'
+
+# Test 10: node, started by the hook, has the temp HOME as its home: nothing
+# reads or writes the real ~/.claude
+printf 'process.stdout.write(require("path").resolve(require("os").homedir()));\n' > "$tmp/home.js"
+anchors S1
+o=$(LANE_TS_T="$tmp/home.js" run "$HOOK" "$(ups S1 hi "$T10")" view)
+t "node's home is the temp HOME" '[ "$(printf %s "$o" | jq -r .hookSpecificOutput.additionalContext)" = "$(nat "$tmp/home")" ]'
+
+# Test 11, Windows only: t2's row when its pid: is $1
+if [ -n "$win" ]; then
+  row() {
+    anchors
+    sedi "s/^pid: .*/pid: $1/" "$AD/t2.md"
+    run "$HOOK" "$(ups S9 hi "$T10")" | jq -r .hookSpecificOutput.additionalContext | grep -F "t2 |"
+  }
+  mkdir -p "$tmp/wh" "$tmp/tl"
+  cp "$(cygpath -S)/PING.EXE" "$tmp/wh/claude.exe"
+  "$tmp/wh/claude.exe" -n 300 127.0.0.1 >/dev/null & C1=$!
+  "$(cygpath -S)/PING.EXE" -n 300 127.0.0.1 >/dev/null & C2=$!
+  sleep 300 & C3=$!
+  W="$C1 $C2 $C3"
+  sleep 0.5
+  WP1=$(cat "/proc/$C1/winpid")
+  WP2=$(cat "/proc/$C2/winpid")
+  o=$(row "$WP1")
+  t "Windows: a live claude.exe by Windows pid is live" 'printf %s "$o" | grep -qF "claimed by S0-other, pid $WP1 live"'
+  o=$(row "$C1")
+  t "Windows: a live claude.exe by Cygwin pid is live" 'printf %s "$o" | grep -qF "claimed by S0-other, pid $C1 live"'
+  o=$(row "$WP2")
+  t "Windows: another program by Windows pid is stale" 'printf %s "$o" | grep -qF "stale (owner S0-other, no live pid)"'
+  o=$(row "$C3")
+  t "Windows: a Cygwin process that is no harness is stale" 'printf %s "$o" | grep -qF "stale (owner S0-other, no live pid)"'
+  # the same number in both: that Cygwin process and a claude.exe, by a stub
+  # tasklist, as no real pair can be made to order
+  cat > "$tmp/tl/tasklist" <<'SH'
+#!/bin/bash
+echo '"claude.exe","0","Console","1","1 K"'
+SH
+  chmod +x "$tmp/tl/tasklist"
+  o=$(PATH="$tmp/tl:$PATH" row "$C3")
+  t "Windows: a Cygwin non-harness does not hide a claude.exe with its number" 'printf %s "$o" | grep -qF "claimed by S0-other, pid $C3 live"'
+  kill "$C1"
+  wait "$C1" 2>/dev/null
+  o=$(row "$WP1")
+  t "Windows: a dead claude.exe is stale" 'printf %s "$o" | grep -qF "stale (owner S0-other, no live pid)"'
+  anchors S1
+  o=$(P="$tmp/proj" run "$HOOK" "$(ups S1 hi "$T10")")
+  t "Windows: a POSIX project dir makes the same slug" 'printf %s "$o" | grep -qF "DECLARED TASK ANCHOR"'
+fi
 
 echo "$fails failed"
 [ "$fails" -eq 0 ]

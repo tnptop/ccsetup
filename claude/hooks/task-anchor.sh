@@ -5,11 +5,20 @@
 # SessionEnd and SessionStart (arg view|last) call this, and UserPromptSubmit
 # with arg view|last (a fresh window's first owned prompt).
 input=$(cat)
+# Windows (Git Bash): jq is native. Its args stay as they are (MSYS would turn
+# a prompt /clear into C:/Program Files/Git/clear) and it writes LF, not CRLF.
+case "${OSTYPE:-}" in
+  msys*|cygwin*) jq() { MSYS2_ARG_CONV_EXCL='*' command jq -b "$@"; } ;;
+esac
 event=$(printf '%s' "$input" | jq -r '.hook_event_name // empty' 2>/dev/null)
 # Key by project root, not .cwd: a Bash `cd` moves .cwd (lane design F5).
 cwd="${CLAUDE_PROJECT_DIR:-}"
 [ -z "$cwd" ] && cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -z "$cwd" ] && cwd="$PWD"
+# Windows: a /c/... dir as lane.ts sees it (C:\...), so both make one slug.
+case "${OSTYPE:-}" in
+  msys*|cygwin*) case "$cwd" in /*) cwd=$(cygpath -w "$cwd") ;; esac ;;
+esac
 slug=$(printf '%s' "$cwd" | sed 's/[^A-Za-z0-9]/-/g')
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
 anchor_dir="$HOME/.claude/task-anchors/$slug"
@@ -86,10 +95,38 @@ lanes_on() {
 # Not comm: Claude Code's comm can be its versioned binary (2.1.306).
 is_harness() {
   local a=
+  case "${OSTYPE:-}" in
+    msys*|cygwin*)
+      is_harness_windows "$1"
+      return
+      ;;
+  esac
   kill -0 "$1" 2>/dev/null || return 1
   a=$(ps -p "$1" -o args= 2>/dev/null) || return 1
   a=${a%% *}
   a=${a##*/}
+  [ "$a" = claude ] || [ "$a" = omp ]
+}
+
+# Windows: CLAUDE_PID is a Windows pid, which kill -0 and /proc do not see; a
+# process started from Git Bash has a Cygwin pid, which tasklist does not. A
+# number can be in both, so a Cygwin process that is no harness does not decide.
+is_harness_windows() {
+  local a=
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  if kill -0 "$1" 2>/dev/null && IFS= read -r -d '' a 2>/dev/null < "/proc/$1/cmdline"; then
+    is_harness_name "$a" && return 0
+  fi
+  # tasklist prints "claude.exe","2144",... or, with no such pid, a sentence.
+  a=$(MSYS2_ARG_CONV_EXCL='*' tasklist /FI "PID eq $1" /NH /FO CSV 2>/dev/null) || return 1
+  a=${a%%,*}
+  is_harness_name "${a//\"/}"
+}
+
+# Arg: a Windows program path or name.
+is_harness_name() {
+  local a=${1##*[/\\]}
+  a=${a%.[eE][xX][eE]}
   [ "$a" = claude ] || [ "$a" = omp ]
 }
 
@@ -106,7 +143,10 @@ harness_pid() {
       printf '%s' "$p"
       return
     fi
-    p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+    case "${OSTYPE:-}" in
+      msys*|cygwin*) p=$(cat "/proc/$p/ppid" 2>/dev/null) ;;
+      *) p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ') ;;
+    esac
   done
 }
 
@@ -298,7 +338,7 @@ lane_add() {
 # hook input: the transcript may not be flushed yet), start the build
 # detached, ask for /clear at 200k.
 on_stop() {
-  local f= lane= d= pid= k=
+  local f= lane= d= pid= k= prompt=
   f=$(owned_task)
   [ -n "$f" ] || return 0
   pid=$(harness_pid)
@@ -307,7 +347,13 @@ on_stop() {
   d="$lanes_dir/$lane"
   lane_add "$lane"
   [ -d "$d" ] || return 0
-  if printf '%s' "$input" | jq --arg prompt "$(cat "$d/prompt" 2>/dev/null)" --arg date "$(iso_now)" \
+  prompt=$(cat "$d/prompt" 2>/dev/null)
+  # Windows: a command line holds 32,767 chars (jq would not start, last.json
+  # would stay old). inject last only reads the first 1,500 of a prompt this long.
+  case "${OSTYPE:-}" in
+    msys*|cygwin*) prompt=${prompt:0:12000} ;;
+  esac
+  if printf '%s' "$input" | jq --arg prompt "$prompt" --arg date "$(iso_now)" \
     '{prompt:$prompt, message:(.last_assistant_message // ""), transcript:(.transcript_path // ""), date:$date}' > "$d/last.json.$$"; then
     mv "$d/last.json.$$" "$d/last.json"
   else
