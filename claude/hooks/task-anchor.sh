@@ -15,6 +15,9 @@ cwd="${CLAUDE_PROJECT_DIR:-}"
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
 transcript_path=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null)
 LANE_TS="${LANE_TS:-$HOME/.claude/hooks/lanes/lane.ts}"
+# project_root, extract_field, is_harness, is_task_file, parse_state_fields (shared with park sweep.sh)
+# shellcheck source-path=SCRIPTDIR source=anchor-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/anchor-lib.sh"
 
 # Lanes off (omp until its port, or no node): the old /park flavors.
 OWNED_INSTRUCTION='Compare this prompt against the anchor. If it diverges, say so in one line and ask: park it or switch the anchor? When the user declares a new task: read ~/.claude/skills/park/SKILL.md and run its switch flavor. When the task finishes: read ~/.claude/skills/park/SKILL.md and run its closed flavor (close ritual, delete task file, drop INDEX row). Never rewrite the STATE line to CLOSED by hand and never leave a task file whose line 1 says CLOSED.'
@@ -23,24 +26,6 @@ OWNED_INSTRUCTION='Compare this prompt against the anchor. If it diverges, say s
 LANE_INSTRUCTION='Compare this prompt against the anchor. If it diverges, say so in one line and ask: stay on this lane, or take the other task to its own window (/claim-task there)? For context, tell the user to type /clear; this lane comes back on its own. To set this task aside and take another in this window, tell the user to type /park, then /clear, then /claim-task. When the task finishes: read ~/.claude/skills/park/SKILL.md and run its closed flavor (close ritual, delete task file, drop INDEX row). Never rewrite the STATE line to CLOSED by hand and never leave a task file whose line 1 says CLOSED.'
 SESSION_LINE="session_id: ${session_id} (use this exact value as owner: when /claim-task writes a claim; do not derive it from transcript files)"
 UNOWNED_INSTRUCTION='No claimed task in this session. If the request matches a claimed row with a live lease: stop and ask the user (continue in that session, or steal). If it matches a free or stale row: run /claim-task <slug>. If it matches nothing: run /claim-task new "<task text>". If unsure, run /claim-task with no argument.'
-
-# The key for $1: inside a linked git worktree, the main checkout plus the
-# same subdirectory (a worktree's own folder is orphaned when it is removed,
-# and EnterWorktree leaves CLAUDE_PROJECT_DIR on the main checkout). Else
-# (main checkout, submodule, not git, no git) $1 unchanged.
-project_root() {
-  local out= gd= cd= prefix= root=
-  out=$(git -C "$1" rev-parse --path-format=absolute --git-dir --git-common-dir --show-prefix 2>/dev/null) || out=
-  { read -r gd; read -r cd; read -r prefix; } <<< "$out"
-  if [ -z "$gd" ] || [ -z "$cd" ] || [ "$gd" = "$cd" ]; then
-    printf '%s' "$1"
-    return
-  fi
-  root=$cd
-  [ "$(basename "$cd")" = .git ] && root=$(dirname "$cd")
-  prefix=${prefix%/}
-  printf '%s' "$root${prefix:+/$prefix}"
-}
 
 iso_now() {
   date +%Y-%m-%dT%H:%M:%S%z | sed 's/\([+-][0-9][0-9]\)\([0-9][0-9]\)$/\1:\2/'
@@ -59,17 +44,6 @@ parse_iso_date_epoch() {
     ''|*[!0-9]*) ;;
     *) printf '%s' "$result" ;;
   esac
-}
-
-extract_field() {
-  local file="$1" key="$2" line=
-  line=$(grep -E "^${key}:" "$file" 2>/dev/null | head -1) || true
-  line=$(printf '%s' "$line" | tr -d '\r')
-  line="${line#${key}:}"
-  line="${line# }"
-  line="${line#"${line%%[![:space:]]*}"}"
-  line="${line%"${line##*[![:space:]]}"}"
-  printf '%s' "$line"
 }
 
 rewrite_field() {
@@ -97,17 +71,6 @@ drop_field() {
 # and node runs lane.ts. lane_add makes the project's lanes dir.
 lanes_on() {
   [ -z "${OMPCODE:-}" ] && command -v node >/dev/null 2>&1
-}
-
-# A live harness: kill -0 works and the first word of args is claude or omp.
-# Not comm: Claude Code's comm can be its versioned binary (2.1.306).
-is_harness() {
-  local a=
-  kill -0 "$1" 2>/dev/null || return 1
-  a=$(ps -p "$1" -o args= 2>/dev/null) || return 1
-  a=${a%% *}
-  a=${a##*/}
-  [ "$a" = claude ] || [ "$a" = omp ]
 }
 
 # The claim's pid: CLAUDE_PID, else (omp sets none) the first harness
@@ -169,40 +132,6 @@ parse_step_from_line() {
   esac
 }
 
-parse_state_fields() {
-  local line="$1" rest= after= nrest=
-  state_date=
-  state_status=
-  state_next=
-  case "$line" in
-    "STATE "*) ;;
-    *) return ;;
-  esac
-  rest="${line#STATE }"
-  state_date="${rest%% *}"
-  case "$rest" in
-    *" | "*)
-      after="${rest#* | }"
-      state_status="${after%% | *}"
-      state_status="${state_status%% *}"
-      ;;
-  esac
-  case "$line" in
-    *next:*)
-      nrest="${line#*next:}"
-      nrest="${nrest# }"
-      case "$nrest" in
-        *" | "*)
-          state_next="${nrest%% | *}"
-          ;;
-        *)
-          state_next="$nrest"
-          ;;
-      esac
-      ;;
-  esac
-}
-
 build_nudges() {
   local limit=150000 say="run /park next at the end of the current step, do not start a new step in this session."
   nudges=
@@ -256,17 +185,6 @@ claim_state_for() {
   else
     printf 'stale (owner %s, no live pid)' "$owner8"
   fi
-}
-
-is_task_file() {
-  local file="$1" base=
-  [ -f "$file" ] || return 1
-  base=$(basename "$file")
-  [ "$base" = "INDEX.md" ] && return 1
-  case "$base" in
-    *.md) return 0 ;;
-    *) return 1 ;;
-  esac
 }
 
 # Context tokens of the transcript's last usage line; arg 2 (Stop) adds its

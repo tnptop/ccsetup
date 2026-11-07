@@ -86,6 +86,8 @@ After §3a–3b on the previous task: invoke `/claim-task new "<text>"`. Do not 
 ### 3d. Empty dir
 If after CLOSED the dir has no task files left (`*.md` other than INDEX.md): delete INDEX.md and the dir.
 
+Bulk close: `sweep.sh` closes finished anchors in bulk without a model turn; run `! ~/.claude/skills/park/scripts/sweep.sh` for a dry run, then `! ~/.claude/skills/park/scripts/sweep.sh close <slug>...`; it writes no worklog closing line — the lane log line is its only record.
+
 ## 4. Commit prep
 List unstaged files, stage the ones belonging to this task, run the `generate-commit-message` skill, then stop — the user commits.
 
