@@ -1,6 +1,8 @@
 #!/bin/bash
 # task-anchor: inject the declared task so Claude can flag sidetracks.
-# Anchors: ~/.claude/task-anchors/<cwd-slug>/{INDEX.md,<task-slug>.md}
+# Anchors: ~/.claude/task-anchors/<root-slug>/{INDEX.md,<task-slug>.md}
+# root = the project root (project_root below); each prompt names its folder
+# on a project_root: line.
 # Lanes (uniichat lane design section 3): on in Claude Code; also Stop,
 # SessionEnd and SessionStart (arg view|last) call this, and UserPromptSubmit
 # with arg view|last (a fresh window's first owned prompt).
@@ -10,12 +12,12 @@ event=$(printf '%s' "$input" | jq -r '.hook_event_name // empty' 2>/dev/null)
 cwd="${CLAUDE_PROJECT_DIR:-}"
 [ -z "$cwd" ] && cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -z "$cwd" ] && cwd="$PWD"
-slug=$(printf '%s' "$cwd" | sed 's/[^A-Za-z0-9]/-/g')
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
-anchor_dir="$HOME/.claude/task-anchors/$slug"
 transcript_path=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null)
-lanes_dir="${LANES_ROOT:-$HOME/.claude/lanes}/$slug"
 LANE_TS="${LANE_TS:-$HOME/.claude/hooks/lanes/lane.ts}"
+# project_root, extract_field, is_harness, is_task_file, parse_state_fields (shared with park sweep.sh)
+# shellcheck source-path=SCRIPTDIR source=anchor-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/anchor-lib.sh"
 
 # Lanes off (omp until its port, or no node): the old /park flavors.
 OWNED_INSTRUCTION='Compare this prompt against the anchor. If it diverges, say so in one line and ask: park it or switch the anchor? When the user declares a new task: read ~/.claude/skills/park/SKILL.md and run its switch flavor. When the task finishes: read ~/.claude/skills/park/SKILL.md and run its closed flavor (close ritual, delete task file, drop INDEX row). Never rewrite the STATE line to CLOSED by hand and never leave a task file whose line 1 says CLOSED.'
@@ -44,17 +46,6 @@ parse_iso_date_epoch() {
   esac
 }
 
-extract_field() {
-  local file="$1" key="$2" line=
-  line=$(grep -E "^${key}:" "$file" 2>/dev/null | head -1) || true
-  line=$(printf '%s' "$line" | tr -d '\r')
-  line="${line#${key}:}"
-  line="${line# }"
-  line="${line#"${line%%[![:space:]]*}"}"
-  line="${line%"${line##*[![:space:]]}"}"
-  printf '%s' "$line"
-}
-
 rewrite_field() {
   local file="$1" key="$2" val="$3"
   if grep -q "^${key}:" "$file" 2>/dev/null; then
@@ -80,17 +71,6 @@ drop_field() {
 # and node runs lane.ts. lane_add makes the project's lanes dir.
 lanes_on() {
   [ -z "${OMPCODE:-}" ] && command -v node >/dev/null 2>&1
-}
-
-# A live harness: kill -0 works and the first word of args is claude or omp.
-# Not comm: Claude Code's comm can be its versioned binary (2.1.306).
-is_harness() {
-  local a=
-  kill -0 "$1" 2>/dev/null || return 1
-  a=$(ps -p "$1" -o args= 2>/dev/null) || return 1
-  a=${a%% *}
-  a=${a##*/}
-  [ "$a" = claude ] || [ "$a" = omp ]
 }
 
 # The claim's pid: CLAUDE_PID, else (omp sets none) the first harness
@@ -152,40 +132,6 @@ parse_step_from_line() {
   esac
 }
 
-parse_state_fields() {
-  local line="$1" rest= after= nrest=
-  state_date=
-  state_status=
-  state_next=
-  case "$line" in
-    "STATE "*) ;;
-    *) return ;;
-  esac
-  rest="${line#STATE }"
-  state_date="${rest%% *}"
-  case "$rest" in
-    *" | "*)
-      after="${rest#* | }"
-      state_status="${after%% | *}"
-      state_status="${state_status%% *}"
-      ;;
-  esac
-  case "$line" in
-    *next:*)
-      nrest="${line#*next:}"
-      nrest="${nrest# }"
-      case "$nrest" in
-        *" | "*)
-          state_next="${nrest%% | *}"
-          ;;
-        *)
-          state_next="$nrest"
-          ;;
-      esac
-      ;;
-  esac
-}
-
 build_nudges() {
   local limit=150000 say="run /park next at the end of the current step, do not start a new step in this session."
   nudges=
@@ -239,17 +185,6 @@ claim_state_for() {
   else
     printf 'stale (owner %s, no live pid)' "$owner8"
   fi
-}
-
-is_task_file() {
-  local file="$1" base=
-  [ -f "$file" ] || return 1
-  base=$(basename "$file")
-  [ "$base" = "INDEX.md" ] && return 1
-  case "$base" in
-    *.md) return 0 ;;
-    *) return 1 ;;
-  esac
 }
 
 # Context tokens of the transcript's last usage line; arg 2 (Stop) adds its
@@ -444,6 +379,18 @@ case "$event" in
     fi 2>/dev/null
     exit 0
     ;;
+esac
+
+# After PostToolUse: it never reads the key, so it skips the git call.
+cwd=$(project_root "$cwd")
+slug=$(printf '%s' "$cwd" | sed 's/[^A-Za-z0-9]/-/g')
+anchor_dir="$HOME/.claude/task-anchors/$slug"
+lanes_dir="${LANES_ROOT:-$HOME/.claude/lanes}/$slug"
+ROOT_LINE="project_root: ${cwd} (anchor dir ${anchor_dir})"
+SESSION_LINE="${SESSION_LINE}
+${ROOT_LINE}"
+
+case "$event" in
   Stop|SessionEnd|SessionStart)
     if lanes_on && [ -d "$anchor_dir" ]; then
       case "$event" in
@@ -511,6 +458,7 @@ if [ -d "$anchor_dir" ]; then
     build_nudges
     ctx="DECLARED TASK ANCHOR ($owned_file): $anchor
 session_id: ${session_id}
+${ROOT_LINE}
 ${instruction}"
     if [ -n "$nudges" ]; then
       ctx="${ctx}
