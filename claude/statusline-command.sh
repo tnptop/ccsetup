@@ -4,7 +4,7 @@ input=$(cat)
 
 model=$(printf '%s' "$input" | jq -r '.model.display_name // "?"')
 cwd=$(printf '%s' "$input" | jq -r '.workspace.current_dir // .cwd // "?"')
-dir=$(basename "$cwd")
+dir="$(basename "$(dirname "$cwd")")/$(basename "$cwd")"
 
 used_tokens=$(printf '%s' "$input" | jq -r '.context_window.total_input_tokens // 0')
 window_size=$(printf '%s' "$input" | jq -r '.context_window.context_window_size // 0')
@@ -15,35 +15,32 @@ total_k=$(( (window_size + 500) / 1000 ))
 ctx="${used_k}k/${total_k}k"
 
 # Task anchor: show the task file owned by THIS session (owner: == session_id).
-# Supports legacy flat file and v2 per-task directory layout.
+# Searched across every anchor dir, not just the cwd's: a session in a worktree
+# can own a task under its project dir (the hook keys on CLAUDE_PROJECT_DIR).
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
-cwd_slug=$(printf '%s' "$cwd" | sed 's/[^A-Za-z0-9]/-/g')
-anchor_legacy="$HOME/.claude/task-anchors/${cwd_slug}.md"
-anchor_dir="$HOME/.claude/task-anchors/${cwd_slug}"
-task="no task claimed"
-if [ -s "$anchor_legacy" ]; then
-  task=$(head -1 "$anchor_legacy")
-elif [ -d "$anchor_dir" ]; then
-  owned=""
-  count=0
-  for f in "$anchor_dir"/*.md; do
-    [ -f "$f" ] || continue
-    slug=$(basename "$f" .md)
-    [ "$slug" = "INDEX" ] && continue
-    count=$((count + 1))
-    if [ -n "$session_id" ] && [ -z "$owned" ]; then
-      owner=$(grep -m1 '^owner:' "$f" 2>/dev/null | sed 's/^owner:[[:space:]]*//' | tr -d '[:space:]')
-      [ "$owner" = "$session_id" ] && owned="$f"
-    fi
-  done
-  if [ -n "$owned" ]; then
-    line1=$(head -1 "$owned")
-    # "STATE <date> | ACTIVE | next: x" -> "ACTIVE | next: x"
-    line1=$(printf '%s' "$line1" | sed 's/^STATE [^|]*| *//')
-    task="$(basename "$owned" .md) | $line1"
-  else
-    task="no task claimed (${count} in index)"
+anchors="$HOME/.claude/task-anchors"
+owned=""
+[ -n "$session_id" ] && owned=$(grep -rlE --include='*.md' \
+  "^owner:[[:space:]]*${session_id}[[:space:]]*$" "$anchors" 2>/dev/null | head -1)
+if [ -n "$owned" ]; then
+  # "STATE <date> | ACTIVE | next: x" -> "ACTIVE | next: x"
+  line1=$(head -1 "$owned" | sed 's/^STATE [^|]*| *//')
+  task="$(basename "$owned" .md) | $line1"
+else
+  project_dir=$(printf '%s' "$input" | jq -r '.workspace.project_dir // empty')
+  root="${project_dir:-$cwd}"
+  # Same key as task-anchor.sh: inside a linked git worktree, the main
+  # checkout plus the same subdirectory.
+  { read -r gd; read -r cd; read -r prefix; } <<< "$(git -C "$root" rev-parse --path-format=absolute --git-dir --git-common-dir --show-prefix 2>/dev/null)"
+  if [ -n "$gd" ] && [ -n "$cd" ] && [ "$gd" != "$cd" ]; then
+    root=$cd
+    [ "$(basename "$cd")" = .git ] && root=$(dirname "$cd")
+    prefix=${prefix%/}
+    root="$root${prefix:+/$prefix}"
   fi
+  project_slug=$(printf '%s' "$root" | sed 's/[^A-Za-z0-9]/-/g')
+  count=$(find "$anchors/$project_slug" -maxdepth 1 -name '*.md' ! -name INDEX.md 2>/dev/null | wc -l | tr -d ' ')
+  task="no task claimed (${count} in index)"
 fi
 if [ ${#task} -gt 70 ]; then
   task="${task:0:67}..."

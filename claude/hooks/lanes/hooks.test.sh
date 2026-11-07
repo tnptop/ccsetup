@@ -8,7 +8,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 HOOK="${1:-$here/../task-anchor.sh}"
 ORACLE="${ORACLE:-$HOME/.claude/hooks/task-anchor.sh}"
 LANE_JS="$here/lane.ts"
-tmp=$(mktemp -d)
+# pwd -P: mktemp says /var, git says /private/var
+tmp=$(cd "$(mktemp -d)" && pwd -P)
 # Windows (Git Bash): nat is a path as Claude Code passes it (C:\...), args_of
 # reads /proc (ps has no -o). win is 1 for the Windows tests.
 win=
@@ -56,12 +57,13 @@ t() {
   fi
 }
 
-# run <hook> <json> [arg]: the hook in the temp world; harness pid $H.
+# run <hook> <json> [arg]: the hook in the temp world; harness pid $H;
+# project dir $PD (default $P).
 # USERPROFILE: node's os.homedir() on Windows reads it and ignores HOME.
 run() {
   local s=$1 j=$2
   shift 2
-  printf '%s' "$j" | HOME="$tmp/home" USERPROFILE="$tmp/home" LANES_ROOT="$tmp/lanes" CLAUDE_PROJECT_DIR="$P" CLAUDE_PID="${PID_OF:-$H}" \
+  printf '%s' "$j" | HOME="$tmp/home" USERPROFILE="$tmp/home" LANES_ROOT="$tmp/lanes" CLAUDE_PROJECT_DIR="${PD:-$P}" CLAUDE_PID="${PID_OF:-$H}" \
     LANE_TS="${LANE_TS_T:-$LANE_JS}" bash "$s" "$@"
 }
 
@@ -415,6 +417,43 @@ SH
   o=$(P="$tmp/proj" run "$HOOK" "$(ups S1 hi "$T10")")
   t "Windows: a POSIX project dir makes the same slug" 'printf %s "$o" | grep -qF "DECLARED TASK ANCHOR"'
 fi
+
+# Test 12: the key is the project root: inside a linked git worktree, the
+# main checkout plus the same subdirectory; else the project dir unchanged.
+# Windows: git gives C:/... where Claude Code gives C:\... (one slug), so np
+# compares paths with / for \.
+g() { git -C "$P" -c user.name=t -c user.email=t@t -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
+sl() { printf '%s' "$1" | sed 's/[^A-Za-z0-9]/-/g'; }
+np() { if [ -n "$win" ]; then printf '%s' "${1//\\//}"; else printf '%s' "$1"; fi; }
+rootline() { [ "$(np "$(printf %s "$1" | jq -r .hookSpecificOutput.additionalContext | grep '^project_root: ')")" = "$(np "project_root: $2 (anchor dir $tmp/home/.claude/task-anchors/$(sl "$2"))")" ]; }
+WT="$P/.claude/worktrees/w"
+g init -q && g commit -q --allow-empty -m init && g worktree add -q --detach "$WT"
+mkdir -p "$P/sub" "$WT/sub"
+anchors S1
+o=$(PD="$WT" run "$HOOK" "$(ups S1 first "$T160")")
+t "worktree: owned task found in the main anchor dir" 'printf %s "$o" | jq -r .hookSpecificOutput.additionalContext | grep -qF "DECLARED TASK ANCHOR ($AD/t1.md"'
+out=$(PD="$WT" STUB_MARKER="$tmp/marker3" LANE_TS_T="$tmp/stub.js" run "$HOOK" "$(stop_json "$T160")")
+for _ in $(seq 1 40); do [ -e "$tmp/marker3" ] && break; sleep 0.25; done
+t "worktree: Stop logs and builds in the main lanes dir, no worktree dirs" '[ "$(np "$(cat "$LD/t1/log")")" = "$(np "$(printf "S1\t%s" "$T160")")" ] && [ "$(np "$(cat "$tmp/marker3" 2>/dev/null)")" = "$(np "build $P t1|")" ] && [ ! -e "$tmp/lanes/$(sl "$WT")" ] && [ ! -e "$tmp/home/.claude/task-anchors/$(sl "$WT")" ]'
+o=$(PD="$P/sub" run "$HOOK" "$(ups S9 hi "$T10")")
+o2=$(PD="$WT/sub" run "$HOOK" "$(ups S9 hi "$T10")")
+t "subdirectory: main checkout keeps \$P/sub, worktree subdir maps to \$P/sub" 'rootline "$o" "$P/sub" && rootline "$o2" "$P/sub"'
+# no git: macOS has git in /usr/bin, so link all else; Windows has no git in
+# /usr/bin (and ln -s would copy each file)
+if [ -n "$win" ]; then
+  NOGIT="/usr/bin:$(dirname "$(command -v jq)"):$(dirname "$(command -v node)")"
+else
+  mkdir -p "$tmp/nogit"
+  for f in /usr/bin/* /bin/*; do [ "${f##*/}" = git ] || ln -sf "$f" "$tmp/nogit/"; done
+  ln -sf "$(command -v jq)" "$tmp/nogit/jq"; ln -sf "$(command -v node)" "$tmp/nogit/node"
+  NOGIT="$tmp/nogit"
+fi
+o=$(PATH="$NOGIT" run "$HOOK" "$(ups S9 hi "$T10")"); rc=$?
+o2=$(PD="$WT" PATH="$NOGIT" run "$HOOK" "$(ups S9 hi "$T10")")
+t "no git in PATH: the key stays the project dir" '[ $rc -eq 0 ] && ! (PATH="$NOGIT"; command -v git >/dev/null) && rootline "$o" "$P" && rootline "$o2" "$WT"'
+o=$(run "$HOOK" "$(ups S1 hi "$T10")")
+o2=$(run "$HOOK" "$(ups S9 hi "$T10")")
+t "UserPromptSubmit: project_root line, owned and unowned" 'rootline "$o" "$P" && rootline "$o2" "$P"'
 
 echo "$fails failed"
 [ "$fails" -eq 0 ]

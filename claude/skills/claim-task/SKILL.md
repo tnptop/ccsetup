@@ -7,17 +7,17 @@ argument-hint: "[<slug> | new \"<task text>\" | steal <slug>]"
 Arg = first token: none → pick from INDEX, `<slug>` → claim if free, `new "<task text>"` → create then claim, `steal <slug>` → overwrite lease after confirmation. Model may invoke none / `<slug>` / `new` on its own; `steal` never without the user saying so.
 
 ## 1. Paths
-cwd-slug = cwd with every non-alphanumeric char replaced by `-`.
-Dir = `~/.claude/task-anchors/<cwd-slug>/`.
+Dir = the anchor dir on the `project_root:` line that the task-anchor hook injects into every prompt (`project_root: <root> (anchor dir <dir>)`). Use it verbatim. project_root = the `<root>` on that line.
+Fallback only when no such line exists in this prompt (hook disabled): project_root = cwd, except inside a linked git worktree (`git rev-parse --path-format=absolute --git-dir` differs from `--git-common-dir`): there it is the main checkout (the parent of the common dir when the common dir is named `.git`, else the common dir itself) plus the same subdirectory (`--show-prefix`, no trailing `/`). Dir = `~/.claude/task-anchors/<root-slug>/`, root-slug = project_root with every non-alphanumeric char replaced by `-`.
 - `INDEX.md` rows: `- <task-slug> | <ACTIVE|PARKED> | next: <one action>`
 - `<task-slug>.md` line 1 (hook parses it; `step` field only when a plan file gives a denominator):
   `STATE <ISO date> | <ACTIVE|PARKED|CLOSED> | next: <one action> | step <N/M>`
   Lines 2+: prose, ≤ 800 chars. Optional lines: `owner: <session_id>`, `heartbeat: <ISO datetime with timezone offset>`, `worktree: <path>`.
-- Session id = the value on the `session_id:` line that the task-anchor hook injects into every prompt (inside the TASK ANCHOR block). Use it verbatim. Fallback only when no such line exists in this prompt (hook disabled): read the newest file under `~/.claude/projects/<cwd-slug>/` whose name matches `<uuid>.jsonl` and use that uuid; if two such files were modified within the last 5 minutes, ask the user which session this is instead of guessing.
+- Session id = the value on the `session_id:` line that the task-anchor hook injects into every prompt (inside the TASK ANCHOR block). Use it verbatim. Fallback only when no such line exists in this prompt (hook disabled): read the newest file under `~/.claude/projects/<cwd-slug>/` (cwd-slug = the RAW cwd with every non-alphanumeric char replaced by `-`, not project_root: this folder is Claude Code's own key, not ours) whose name matches `<uuid>.jsonl` and use that uuid; if two such files were modified within the last 5 minutes, ask the user which session this is instead of guessing.
 
 ## 2. Migration
 Run before argument handling.
-- Dir missing: `mkdir -p` the dir and write an empty `INDEX.md`.
+- Dir missing: `mkdir -p` that same dir (§1) and write an empty `INDEX.md`.
 
 ## 3. Lease
 Live-claimed = has an `owner:` line AND a live lease. Otherwise free (no owner, or lease not live).
@@ -25,7 +25,7 @@ Live-claimed = has an `owner:` line AND a live lease. Otherwise free (no owner, 
 - No `pid:` line: live = a `heartbeat:` line less than 4 hours old (whole hours). Age label: first 8 chars of owner, `<N>h ago`. This fallback exists only for the hook-disabled mode in CLAUDE.md, where no hook writes `pid:`.
 
 ## 4. No argument
-AskUserQuestion. Options = INDEX rows, newest first by STATE date, max 3 shown. Label each `<slug> — <status> — next: <...>`. When the row's lane has a built view, show the view's last line instead of the INDEX `next:` (the INDEX `next:` goes stale in Claude Code): `node "${LANE_TS:-$HOME/.claude/hooks/lanes/lane.ts}" inject view "<cwd>" "<slug>" | tail -1` (read-only; empty output = no view, keep the INDEX `next:`). Live-claimed rows append `claimed by <age label from §3>`. Always include an Other / free-text option so the user can type a slug or new task text.
+AskUserQuestion. Options = INDEX rows, newest first by STATE date, max 3 shown. Label each `<slug> — <status> — next: <...>`. When the row's lane has a built view, show the view's last line instead of the INDEX `next:` (the INDEX `next:` goes stale in Claude Code): `node "${LANE_TS:-$HOME/.claude/hooks/lanes/lane.ts}" inject view "<project_root>" "<slug>" | tail -1` (read-only; empty output = no view, keep the INDEX `next:`). Live-claimed rows append `claimed by <age label from §3>`. Always include an Other / free-text option so the user can type a slug or new task text.
 - Choosing a live-claimed row = explicit steal confirmation → §7.
 - Choosing a free/stale row (or this session already owns it) → §5.
 - Typed slug → §5; typed new task text → §6.
@@ -45,8 +45,8 @@ Derive a kebab-case slug from the text: first 5 words, lowercase, characters `a-
 a. Check every OTHER row in INDEX.md with the §3 Lease rule: live-claimed and age label as there.
 b. None live-claimed: proceed as today, no question.
 c. At least one live-claimed: ask the user ONE question naming the live task(s) (slug + age), with three options: "sandbox lane (review: session stays here, worktree at ../<repo>-<slug>)", "feature lane (EnterWorktree, session moves into .claude/worktrees/<slug>)", "no lane".
-d. Sandbox lane: `<ref>` = a branch, MR head, or commit the task text names; if it names none, ask the user for `<ref>` (default `origin/main` after `git fetch`). repo-basename = `basename "$(git rev-parse --show-toplevel)"`. Run `git worktree add --detach ../<repo-basename>-<slug> <ref>`. Once the task file below exists, add the line `worktree: <absolute path>` to it, after any `owner:`/`heartbeat:` lines. Continue the claim in the current cwd's anchor dir.
-e. Feature lane: call `EnterWorktree(name=<slug>)`. Do the task file write, INDEX.md row, and §8 Claim write below in the NEW cwd's anchor dir (recompute cwd-slug after the switch). Also append one pointer row to the ORIGINAL cwd's INDEX.md: `- <slug> | LANE | .claude/worktrees/<slug>` so a reader of the origin INDEX sees the lane exists.
+d. Sandbox lane: `<ref>` = a branch, MR head, or commit the task text names; if it names none, ask the user for `<ref>` (default `origin/main` after `git fetch`). repo-basename = `basename "$(git rev-parse --show-toplevel)"`. Run `git worktree add --detach ../<repo-basename>-<slug> <ref>`. Once the task file below exists, add the line `worktree: <absolute path>` to it, after any `owner:`/`heartbeat:` lines. Continue the claim in the §1 anchor dir.
+e. Feature lane: call `EnterWorktree(name=<slug>)`. Do the task file write, INDEX.md row, and §8 Claim write below in the SAME anchor dir as before the switch (the one from the `project_root:` line; do not recompute it from the new cwd). Once the task file below exists, add the line `worktree: <absolute worktree path>` to it, after any `owner:`/`heartbeat:`/`pid:` lines, as in step d. Write no pointer row to any INDEX.md.
 f. No lane: proceed as today.
 
 Write the new task file:
@@ -54,7 +54,7 @@ Write the new task file:
 STATE <today's ISO date> | ACTIVE | next: <first concrete action, derived from the task text>
 <task text verbatim>
 ```
-Today's date: `date +%Y-%m-%d`. Add `- <slug> | ACTIVE | next: <same next>` to INDEX.md. Then run §8 Claim write. If the lane check chose the sandbox lane (d), append the `worktree:` line to the task file now.
+Today's date: `date +%Y-%m-%d`. Add `- <slug> | ACTIVE | next: <same next>` to INDEX.md. Then run §8 Claim write. If the lane check chose a sandbox lane (d) or a feature lane (e), append the `worktree:` line to the task file now.
 
 The skill creates lanes only via steps d and e above, and never removes them; removal belongs to `/park`.
 

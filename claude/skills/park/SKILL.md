@@ -7,10 +7,9 @@ disable-model-invocation: true
 
 Flavor = first word of the argument: none → TOMORROW, `next` → NEXT, `switch` → SWITCH (rest = new task text), `closed` → CLOSED (task finished).
 TOMORROW, NEXT and SWITCH are omp-only (until omp gets lanes; omp sets `OMPCODE=1`). In Claude Code only CLOSED exists: for a fresh context the user types `/clear` and the lane comes back on its own. A Claude Code session that gets another flavor prints one line saying so ("in Claude Code only `/park closed` exists; for a fresh context type `/clear`") and stops.
-cwd-slug = cwd with every non-alphanumeric char replaced by `-`.
-Dir = `~/.claude/task-anchors/<cwd-slug>/`.
+Dir and project_root = the claim-task skill's §1 Paths rule (`~/.claude/skills/claim-task/SKILL.md`): the anchor dir and `<root>` on the hook's `project_root:` line, used verbatim; computed by hand only when no such line exists (hook disabled).
 Target = the task file in that dir whose `owner:` line equals this session's id.
-Session id = the value on the `session_id:` line that the task-anchor hook injects into every prompt (inside the TASK ANCHOR block). Use it verbatim. Fallback only when no such line exists in this prompt (hook disabled): read the newest file under `~/.claude/projects/<cwd-slug>/` whose name matches `<uuid>.jsonl` and use that uuid; if two such files were modified within the last 5 minutes, ask the user which session this is instead of guessing.
+Session id = the value on the `session_id:` line that the task-anchor hook injects into every prompt (inside the TASK ANCHOR block). Use it verbatim. Fallback only when no such line exists in this prompt (hook disabled): read the newest file under `~/.claude/projects/<cwd-slug>/` (cwd-slug = the RAW cwd with every non-alphanumeric char replaced by `-`, not project_root: this folder is Claude Code's own key) whose name matches `<uuid>.jsonl` and use that uuid; if two such files were modified within the last 5 minutes, ask the user which session this is instead of guessing.
 If the dir exists but no file is owned by this session: print "no claimed task in this session — use /handoff or /claim-task first" and stop.
 Non-repo work (scratch dir, no worklog): use `/handoff` instead and say so.
 Live-claimed = the claim-task skill's §3 Lease rule (`~/.claude/skills/claim-task/SKILL.md`), with its age label.
@@ -52,9 +51,12 @@ fi
 ```
 
 CLOSED → before deleting the file, run the close ritual:
-- Task file has a `worktree:` line: run `git worktree remove <path>`. If git refuses because the worktree is dirty, list the dirty files (`git -C <path> status --short`) and ask the user "remove anyway (--force) or keep?" — never pass `--force` without that answer. If the worktree was on a named branch (not detached) and `git merge-base --is-ancestor <branch> main` succeeds, run `git branch -d <branch>`; otherwise report the branch name as kept.
-- Task file has no `worktree:` line but the session is inside an EnterWorktree lane (cwd under `.claude/worktrees/`): call `ExitWorktree(action="remove")` — it refuses on dirty state; if it refuses, ask the user the same "remove anyway (--force) or keep?" question. Then delete the matching `- <slug> | LANE | …` pointer row from the origin repo's INDEX.md (origin cwd = the repo root two levels above `.claude/worktrees/<name>`).
-- `~/.claude/lanes/<cwd-slug>/` exists: append the outcome to the lane log (the tree is kept): `node "${LANE_TS:-$HOME/.claude/hooks/lanes/lane.ts}" close "<cwd>" "<slug>" "<outcome>"`.
+- Task file has a `worktree:` line: note its branch first (`git -C <path> branch --show-current`; empty = detached). Then:
+  - The session's cwd is inside that path (an EnterWorktree lane): call `ExitWorktree(action="remove")`.
+  - Otherwise: run `git -C <project_root> worktree remove <path>`.
+  - The path is already gone: run `git -C <project_root> worktree prune` and continue.
+  If removal refuses because the worktree is dirty, list the dirty files (`git -C <path> status --short`) and ask the user "remove anyway (--force) or keep?" — never pass `--force` without that answer. If the worktree was on a named branch (not detached) and `git -C <project_root> merge-base --is-ancestor <branch> main` succeeds, run `git -C <project_root> branch -d <branch>`; otherwise report the branch name as kept.
+- `~/.claude/lanes/<root-slug>/` exists (root-slug = the anchor dir's last path part): append the outcome to the lane log (the tree is kept): `node "${LANE_TS:-$HOME/.claude/hooks/lanes/lane.ts}" close "<project_root>" "<slug>" "<outcome>"`.
 
 Then delete the task file (`rm "${file:?}"`). Do not run the release sed and do not rewrite line 1 — a CLOSED task has no file. Never leave a file whose line 1 says CLOSED.
 
@@ -82,12 +84,14 @@ After §3a–3b on the previous task: invoke `/claim-task new "<text>"`. Do not 
 ### 3d. Empty dir
 If after CLOSED the dir has no task files left (`*.md` other than INDEX.md): delete INDEX.md and the dir.
 
+Bulk close: `sweep.sh` closes finished anchors in bulk without a model turn; run `! ~/.claude/skills/park/scripts/sweep.sh` for a dry run, then `! ~/.claude/skills/park/scripts/sweep.sh close <slug>...`; it writes no worklog closing line — the lane log line is its only record.
+
 ## 4. Commit prep
 List unstaged files, stage the ones belonging to this task, run the `generate-commit-message` skill, then stop — the user commits.
 
 ## 5. Resume recipe + oracle
-Print: cwd, target line 1, `worktree:` path if the task file has one, log paths of anything still running, and the first command for the next session.
+Print: cwd, project_root, target line 1, `worktree:` path if the task file has one, log paths of anything still running, and the first command for the next session.
 NEXT and TOMORROW: first command is `/claim-task <slug>`. CLOSED: first command is `/claim-task` with no argument (pick the next task from INDEX).
 Verify and report plainly: target mtime is now; `git status` is clean OR every dirty file is named in the worklog; the task file (if it still exists) has no `owner:` line; the INDEX row status matches the STATE line. If the owner line remains or the INDEX status does not match STATE, say "not parked" and what is missing.
-Also: if the task file still exists and has a `worktree:` line, verify the path exists and report it. If the flavor was CLOSED, verify `git worktree list` no longer shows the path; if it still shows, say "lane not removed".
-CLOSED oracle: the task file no longer exists, `grep "^- <slug> | " INDEX.md` finds nothing, and the lane path (if any) is absent from `git worktree list`. If any of the three still holds, say "not closed" and name which.
+Also: if the task file still exists and has a `worktree:` line, verify the path exists and report it. If the flavor was CLOSED, verify `git -C <project_root> worktree list` no longer shows the path; if it still shows, say "lane not removed".
+CLOSED oracle: the task file no longer exists, `grep "^- <slug> | " INDEX.md` finds nothing, and the lane path (if any) is absent from `git -C <project_root> worktree list`. If any of the three still holds, say "not closed" and name which.
