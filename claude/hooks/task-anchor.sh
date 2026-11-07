@@ -10,19 +10,29 @@ input=$(cat)
 case "${OSTYPE:-}" in
   msys*|cygwin*) jq() { MSYS2_ARG_CONV_EXCL='*' command jq -b "$@"; } ;;
 esac
-event=$(printf '%s' "$input" | jq -r '.hook_event_name // empty' 2>/dev/null)
+# One jq for every input field the hook reads first: on Windows each fork costs
+# 20-60 ms, and Stop must return in under 1 s. As with $(jq -r ...): a string
+# loses its NUL chars and trailing newlines, any other value is its JSON;
+# invalid input leaves all four empty.
+event= input_cwd= session_id= transcript_path=
+eval "$(jq -r 'def nl: if endswith("\n") then .[:-1] | nl else . end;
+  def s: (. // "") | if type == "string" then . else tojson end | explode | map(select(. != 0)) | implode | nl;
+  @sh "event=\(.hook_event_name | s) input_cwd=\(.cwd | s) session_id=\(.session_id | s) transcript_path=\(.transcript_path | s)"' <<<"$input" 2>/dev/null)"
 # Key by project root, not .cwd: a Bash `cd` moves .cwd (lane design F5).
 cwd="${CLAUDE_PROJECT_DIR:-}"
-[ -z "$cwd" ] && cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
+[ -z "$cwd" ] && cwd="$input_cwd"
 [ -z "$cwd" ] && cwd="$PWD"
 # Windows: a /c/... dir as lane.ts sees it (C:\...), so both make one slug.
 case "${OSTYPE:-}" in
   msys*|cygwin*) case "$cwd" in /*) cwd=$(cygpath -w "$cwd") ;; esac ;;
 esac
-slug=$(printf '%s' "$cwd" | sed 's/[^A-Za-z0-9]/-/g')
-session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
+# Each char not in A-Za-z0-9 becomes "-" (as lane.ts). A dir of ASCII chars
+# only needs no sed fork; any other dir keeps sed, as before.
+case "$cwd" in
+  *[![:ascii:]]*) slug=$(printf '%s' "$cwd" | sed 's/[^A-Za-z0-9]/-/g') ;;
+  *) slug=${cwd//[!0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz]/-} ;;
+esac
 anchor_dir="$HOME/.claude/task-anchors/$slug"
-transcript_path=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null)
 lanes_dir="${LANES_ROOT:-$HOME/.claude/lanes}/$slug"
 LANE_TS="${LANE_TS:-$HOME/.claude/hooks/lanes/lane.ts}"
 
@@ -34,8 +44,19 @@ LANE_INSTRUCTION='Compare this prompt against the anchor. If it diverges, say so
 SESSION_LINE="session_id: ${session_id} (use this exact value as owner: when /claim-task writes a claim; do not derive it from transcript files)"
 UNOWNED_INSTRUCTION='No claimed task in this session. If the request matches a claimed row with a live lease: stop and ask the user (continue in that session, or steal). If it matches a free or stale row: run /claim-task <slug>. If it matches nothing: run /claim-task new "<task text>". If unsure, run /claim-task with no argument.'
 
+# Local time with the offset as +07:00. bash 4.2+ formats it itself (no date
+# or sed fork); bash 3.2 (macOS) still runs date.
 iso_now() {
-  date +%Y-%m-%dT%H:%M:%S%z | sed 's/\([+-][0-9][0-9]\)\([0-9][0-9]\)$/\1:\2/'
+  local t=
+  if [ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 2 ]; }; then
+    printf -v t '%(%Y-%m-%dT%H:%M:%S%z)T' -1
+  else
+    t=$(date +%Y-%m-%dT%H:%M:%S%z)
+  fi
+  case "$t" in
+    *[+-][0-9][0-9][0-9][0-9]) t="${t%??}:${t#"${t%??}"}" ;;
+  esac
+  printf '%s' "$t"
 }
 
 parse_iso_date_epoch() {
@@ -53,10 +74,16 @@ parse_iso_date_epoch() {
   esac
 }
 
+# The first "key:" line; no grep, head or tr (forks are slow on Windows).
 extract_field() {
-  local file="$1" key="$2" line=
-  line=$(grep -E "^${key}:" "$file" 2>/dev/null | head -1) || true
-  line=$(printf '%s' "$line" | tr -d '\r')
+  local file="$1" key="$2" line= cr=$'\r'
+  {
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in "${key}:"*) break ;; esac
+      line=
+    done < "$file"
+  } 2>/dev/null
+  line="${line//$cr/}"
   line="${line#${key}:}"
   line="${line# }"
   line="${line#"${line%%[![:space:]]*}"}"
@@ -284,7 +311,7 @@ claim_state_for() {
 is_task_file() {
   local file="$1" base=
   [ -f "$file" ] || return 1
-  base=$(basename "$file")
+  base=${file##*/}
   [ "$base" = "INDEX.md" ] && return 1
   case "$base" in
     *.md) return 0 ;;
@@ -301,8 +328,8 @@ ctx_tokens_of() {
     usage_line=$(tail -c 400000 "$tp" | grep -e '"cache_read_input_tokens"' -e '"subtype":"compact_boundary"' | tail -1) || true
     if [ -n "$usage_line" ]; then
       case "$usage_line" in
-        *'"subtype":"compact_boundary"'*) parsed=$(printf '%s' "$usage_line" | jq -r '.compactMetadata.postTokens // 0' 2>/dev/null) || true ;;
-        *) parsed=$(printf '%s' "$usage_line" | jq -r ".message.usage | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0)${out}" 2>/dev/null) || true ;;
+        *'"subtype":"compact_boundary"'*) parsed=$(jq -r '.compactMetadata.postTokens // 0' <<<"$usage_line" 2>/dev/null) || true ;;
+        *) parsed=$(jq -r ".message.usage | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0)${out}" <<<"$usage_line" 2>/dev/null) || true ;;
       esac
       case "$parsed" in
         ''|*[!0-9]*) ;;
@@ -343,18 +370,19 @@ on_stop() {
   [ -n "$f" ] || return 0
   pid=$(harness_pid)
   [ -n "$pid" ] && rewrite_field "$f" pid "$pid"
-  lane=$(basename "$f" .md)
+  lane=${f##*/}
+  lane=${lane%.md}
   d="$lanes_dir/$lane"
   lane_add "$lane"
   [ -d "$d" ] || return 0
-  prompt=$(cat "$d/prompt" 2>/dev/null)
+  { prompt=$(<"$d/prompt"); } 2>/dev/null
   # Windows: a command line holds 32,767 chars (jq would not start, last.json
   # would stay old). inject last only reads the first 1,500 of a prompt this long.
   case "${OSTYPE:-}" in
     msys*|cygwin*) prompt=${prompt:0:12000} ;;
   esac
-  if printf '%s' "$input" | jq --arg prompt "$prompt" --arg date "$(iso_now)" \
-    '{prompt:$prompt, message:(.last_assistant_message // ""), transcript:(.transcript_path // ""), date:$date}' > "$d/last.json.$$"; then
+  if jq --arg prompt "$prompt" --arg date "$(iso_now)" \
+    '{prompt:$prompt, message:(.last_assistant_message // ""), transcript:(.transcript_path // ""), date:$date}' <<<"$input" > "$d/last.json.$$"; then
     mv "$d/last.json.$$" "$d/last.json"
   else
     rm -f "$d/last.json.$$"
