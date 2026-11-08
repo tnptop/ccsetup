@@ -17,7 +17,12 @@ case "${1:-}" in
   *) usage ;;
 esac
 
-root=$(project_root "$PWD")
+# Windows (Git Bash): /c/... as task-anchor.sh keys it (C:\...), one slug.
+here=$PWD
+case "${OSTYPE:-}" in
+  msys*|cygwin*) here=$(cygpath -w "$PWD") ;;
+esac
+root=$(project_root "$here")
 rslug=$(printf '%s' "$root" | sed 's/[^A-Za-z0-9]/-/g')
 dir="$HOME/.claude/task-anchors/$rslug"
 lanes="${LANES_ROOT:-$HOME/.claude/lanes}/$rslug"
