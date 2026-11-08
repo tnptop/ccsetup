@@ -1,5 +1,9 @@
 {
+  "cleanupPeriodDays": 365,
   "permissions": {
+    "allow": [
+      "mcp__opencode"
+    ],
     "deny": [
       "Bash(git reset --hard:*)",
       "Bash(git clean:*)",
@@ -129,6 +133,46 @@
         ]
       }
     ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/account-log.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "^(startup|resume|clear|compact|fork)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash '/Users/thanapbh/.claude/hooks/herdr-agent-state.sh' session",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "^(clear|compact|resume)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh view",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "^clear$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-anchor.sh last",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
@@ -147,28 +191,6 @@
             "type": "command",
             "command": "~/.claude/hooks/task-anchor.sh",
             "timeout": 5
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "matcher": "^(clear|compact|resume)$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/task-anchor.sh view",
-            "timeout": 30
-          }
-        ]
-      },
-      {
-        "matcher": "^clear$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/task-anchor.sh last",
-            "timeout": 10
           }
         ]
       }
@@ -224,10 +246,12 @@
       "effortLevel": "high"
     }
   },
+  "autoCompactWindow": 300000,
   "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
   "autoCompactEnabled": true,
+  "idleCompaction": false,
   "agentPushNotifEnabled": true,
   "autoMode": {
     "soft_deny": [
@@ -262,8 +286,5 @@
       "**Routine under repo prefix**: routine read/write/lint/test operations under this repo's working tree (src/, data/samples/, docs/) — data/kb/ changes require DMC sign-off per README; data/local/uat36/ is untracked/disposable fixture data",
       "**Trusted internal hosts**: 172.30.120.93 port 2222 (DGX Spark shared GPU box, ssh user thanapbh, read-only monitoring and HF cache inspection are routine)"
     ]
-  },
-  "cleanupPeriodDays": 365,
-  "autoCompactWindow": 300000,
-  "idleCompaction": false
+  }
 }
