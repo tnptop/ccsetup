@@ -68,6 +68,7 @@ opencode_pairs() {
   echo "opencode/opencode.json|$OPENCODE/opencode.json"
   echo "opencode/plugins/ccsetup-guardrails.js|$OPENCODE/plugins/ccsetup-guardrails.js"
   echo "claude/hooks/block-dangerous-git.sh|$OPENCODE/guardrails/block-dangerous-git.sh"
+  echo "claude/hooks/push-gate.sh|$OPENCODE/guardrails/push-gate.sh"
   echo "claude/hooks/token-limit.sh|$OPENCODE/guardrails/token-limit.sh"
   echo "opencode/plugins/verbosity-toggle|$OPENCODE/plugins/verbosity-toggle"
   echo "opencode/agents|$OPENCODE/agents"
