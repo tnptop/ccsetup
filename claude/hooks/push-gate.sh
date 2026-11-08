@@ -50,6 +50,12 @@ fi
 ALLOW='^(cd ([A-Za-z0-9_./~@+-]+) && )?git push(( (-u|--set-upstream|--force-with-lease|--dry-run))*) origin ([A-Za-z0-9][A-Za-z0-9._/-]*)( 2>&1)?( \| (tail|head)( -n)? -?[0-9]+)?$'
 [[ $CMD =~ $ALLOW ]] || block "this push is not in the accepted shape. Run it alone, as: $SHAPE"
 DIR=${BASH_REMATCH[2]:-$CWD}; FLAGS=${BASH_REMATCH[3]}; B=${BASH_REMATCH[6]}
+# Windows (Git Bash): the hook input cwd is a drive path (C:\... or C:/...). Make it /c/...
+# The cd path in ALLOW cannot hold ":" or "\", so this changes only the cwd from the hook input.
+case "${OSTYPE:-}" in
+  msys*|cygwin*)
+    case "$DIR" in [A-Za-z]:[\\/]*) U=$(cygpath -u "$DIR") || block "cannot convert the Windows path '$DIR'"; DIR=$U ;; esac ;;
+esac
 case "$DIR" in "~"|"~/"*) DIR="$HOME${DIR#\~}" ;; esac
 case "$DIR" in /*) ;; *) block "the push directory must be an absolute path (got '$DIR')" ;; esac
 g() { git -C "$DIR" "$@"; }

@@ -187,6 +187,24 @@ f A /tmp "remote has zero unique commits, first local mine" "cd $ME && git push 
 f B /tmp "remote has zero unique commits, first local theirs" "cd $ME && git push origin feat/zero-theirs"
 f B /tmp "lease would replace a colleague commit" "cd $ME && git push --force-with-lease origin feat/leased"
 f A /tmp "lease replaces only mine, colleague commit kept" "cd $ME && git push --force-with-lease origin feat/kept"
+# drive paths: the cd path cannot hold one; a drive cwd blocks off Windows (not absolute)
+f B /tmp "cd with a drive path is not the accepted shape" "cd C:/Users && git push origin feat/mine"
+f B 'C:\nope' "drive cwd, missing dir" "git push origin feat/mine"
+# Windows (Git Bash): Claude Code sends the cwd as a drive path, C:\...
+case "${OSTYPE:-}" in
+  msys*|cygwin*)
+    WME=$(cygpath -w "$ME")
+    f A "$WME" "Windows cwd C:\\..., own branch" "git push origin feat/mine"
+    f A "${WME//\\//}" "Windows cwd C:/..., own branch" "git push origin feat/mine"
+    f B "$WME" "Windows cwd C:\\..., main still blocked" "git push origin main"
+    f B "$WME" "Windows cwd C:\\..., colleague branch still blocked" "git push origin feat/theirs"
+    f B "$(cygpath -w "$TMP")" "Windows cwd C:\\..., not a git repository" "git push origin feat/mine"
+    f B 'C:nope' "Windows drive-relative cwd" "git push origin feat/mine"
+    f B '\\host\share\x' "Windows UNC cwd" "git push origin feat/mine"
+    STUB="$TMP/stub"; mkdir -p "$STUB"; printf '#!/bin/sh\nexit 1\n' > "$STUB/cygpath"; chmod +x "$STUB/cygpath"
+    PATH="$STUB:$PATH" f B "$WME" "Windows cwd, cygpath fails" "git push origin feat/mine"
+    ;;
+esac
 
 echo "$N fixtures"
 exit $FAILED
