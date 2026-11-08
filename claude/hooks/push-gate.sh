@@ -6,6 +6,7 @@
 
 # Any failure must block. A hook that exits 1 is a non-blocking error: the push would run.
 trap 'rc=$?; [ "$rc" -eq 0 ] || exit 2' EXIT
+set -o pipefail    # a pipeline fails when any part of it fails, not only the last
 
 MY_EMAILS=""        # knob: extra author emails that count as "me", space separated
 NET_TIMEOUT=20      # knob: seconds allowed for the remote lookup
@@ -49,6 +50,12 @@ fi
 ALLOW='^(cd ([A-Za-z0-9_./~@+-]+) && )?git push(( (-u|--set-upstream|--force-with-lease|--dry-run))*) origin ([A-Za-z0-9][A-Za-z0-9._/-]*)( 2>&1)?( \| (tail|head)( -n)? -?[0-9]+)?$'
 [[ $CMD =~ $ALLOW ]] || block "this push is not in the accepted shape. Run it alone, as: $SHAPE"
 DIR=${BASH_REMATCH[2]:-$CWD}; FLAGS=${BASH_REMATCH[3]}; B=${BASH_REMATCH[6]}
+# Windows (Git Bash): the hook input cwd is a drive path (C:\... or C:/...). Make it /c/...
+# The cd path in ALLOW cannot hold ":" or "\", so this changes only the cwd from the hook input.
+case "${OSTYPE:-}" in
+  msys*|cygwin*)
+    case "$DIR" in [A-Za-z]:[\\/]*) U=$(cygpath -u "$DIR") || block "cannot convert the Windows path '$DIR'"; DIR=$U ;; esac ;;
+esac
 case "$DIR" in "~"|"~/"*) DIR="$HOME${DIR#\~}" ;; esac
 case "$DIR" in /*) ;; *) block "the push directory must be an absolute path (got '$DIR')" ;; esac
 g() { git -C "$DIR" "$@"; }
@@ -60,9 +67,10 @@ g show-ref --verify --quiet "refs/heads/$B" || block "no local branch named '$B'
 URL=$(g remote get-url --push origin 2>/dev/null) && [ -n "$URL" ] || block "no remote named origin"
 LS=$(GIT_TERMINAL_PROMPT=0 perl -e 'alarm shift; exec @ARGV' "$NET_TIMEOUT" git -C "$DIR" ls-remote --symref "$URL" HEAD "refs/heads/$B" 2>/dev/null) \
   || block "cannot read the remote (offline, auth, or timeout). Not pushing blind."
-DEF=$(printf '%s\n' "$LS" | awk '$1=="ref:" && $3=="HEAD" {sub("^refs/heads/","",$2); print $2}')
-DEFSHA=$(printf '%s\n' "$LS" | awk '$1!="ref:" && $2=="HEAD" {print $1}')
-TIP=$(printf '%s\n' "$LS" | awk -v r="refs/heads/$B" '$2==r {print $1}')
+NOPARSE="cannot parse the remote listing. Not pushing blind."
+DEF=$(printf '%s\n' "$LS" | awk '$1=="ref:" && $3=="HEAD" {sub("^refs/heads/","",$2); print $2}') || block "$NOPARSE"
+DEFSHA=$(printf '%s\n' "$LS" | awk '$1!="ref:" && $2=="HEAD" {print $1}') || block "$NOPARSE"
+TIP=$(printf '%s\n' "$LS" | awk -v r="refs/heads/$B" '$2==r {print $1}') || block "$NOPARSE"
 [ -n "$DEF" ] && [ -n "$DEFSHA" ] || block "cannot determine the default branch of origin"
 [ "$B" != "$DEF" ] || block "'$B' is the default branch of origin. The user pushes it by hand."
 
@@ -76,22 +84,35 @@ if [ -z "$TIP" ]; then
 fi
 g cat-file -e "$TIP^{commit}" 2>/dev/null && g cat-file -e "$DEFSHA^{commit}" 2>/dev/null \
   || block "origin has commits that are not in this clone. Run 'git fetch origin', look at them, then retry."
-ME=" $(g config user.email) $MY_EMAILS "
+EMAIL=$(g config user.email) || block "no user.email in the git config. Cannot tell which commits are the user's."
+ME=" $EMAIL $MY_EMAILS "
 mine() { case "$ME" in *" $1 "*) return 0 ;; esac; return 1; }
-ae() { g log --format=%ae "$@" | sed 's/^$/?/'; }    # author emails; an empty one prints as "?", never as "no commit"
-FIRST=$(ae --first-parent --reverse "$DEFSHA..$TIP" | head -n 1); WHERE="on origin"
+# Author emails, one per line; an empty one prints as "?", never as "no commit".
+# The "x" prefix keeps empty emails as lines. A failing git log fails ae: no pipe hides its status.
+ae() {
+  local out; out=$(g log --format=x%ae "$@") || return 1
+  [ -z "$out" ] || printf '%s\n' "$out" | sed 's/^x$/?/; s/^x//'
+}
+NOLOG="cannot read the history of '$B' (git log failed). Not pushing blind."
+FIRST=$(ae --first-parent --reverse "$DEFSHA..$TIP") || block "$NOLOG"
+FIRST=${FIRST%%$'\n'*}; WHERE="on origin"
 if [ -z "$FIRST" ]; then
-  FIRST=$(ae --first-parent --reverse "$DEFSHA..refs/heads/$B" | head -n 1); WHERE="in this clone"
+  FIRST=$(ae --first-parent --reverse "$DEFSHA..refs/heads/$B") || block "$NOLOG"
+  FIRST=${FIRST%%$'\n'*}; WHERE="in this clone"
   [ -n "$FIRST" ] || block "'$B' has no commits of its own, on origin or locally (merged or freshly cut). Cannot prove it is the user's branch."
 fi
 mine "$FIRST" || block "the first commit of '$B' $WHERE is by $FIRST. Not the user's branch."
 
 # 6. Forced update: only with a lease, and only when the lease is tied to the tip checked above.
 if [ "$LEASE" -eq 1 ]; then
-  [ "$(g rev-parse -q --verify "refs/remotes/origin/$B")" = "$TIP" ] \
+  RT=$(g rev-parse -q --verify "refs/remotes/origin/$B") && [ "$RT" = "$TIP" ] \
     || block "refs/remotes/origin/$B differs from the live tip of origin. Run 'git fetch origin' and review first."
   # not yet ruled by the user; delete this block to drop it
-  for a in $(ae "refs/heads/$B..$TIP" | sort -u); do
+  GONE=$(ae "refs/heads/$B..$TIP") || block "$NOLOG"
+  # No sort, pipe or temp file here: nothing can fail and leave the list empty.
+  # One email per line; set -f stops a "*" or "?" in an email from expanding to file names.
+  set -f; IFS=$'\n'
+  for a in $GONE; do
     mine "$a" || block "the forced update would replace commits by $a on origin/$B. Not the user's to overwrite."
   done
 fi

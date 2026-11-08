@@ -11,13 +11,35 @@ SWEEP="$here/sweep.sh"
 HOOKS=$(cd "$here/../../../hooks" && pwd)
 # pwd -P: mktemp says /var, git says /private/var
 TMP=$(cd "$(mktemp -d)" && pwd -P)
+# Windows (Git Bash): nat is a path as task-anchor.sh and sweep.sh key it
+# (C:\...); np compares paths with / for \ (git gives C:/...). win is 1 for
+# the Windows checks.
+win=
+case "${OSTYPE:-}" in
+  msys*|cygwin*)
+    win=1
+    nat() { cygpath -w "$1"; }
+    np() { printf '%s' "${1//\\//}"; }
+    ;;
+  *)
+    nat() { printf '%s' "$1"; }
+    np() { printf '%s' "$1"; }
+    ;;
+esac
 ln -s /bin/sleep "$TMP/claude"
 "$TMP/claude" 300 & H=$!
-bash -c 'exit 0' & DEAD=$!
-wait "$DEAD"
-trap 'kill $H 2>/dev/null; wait $H 2>/dev/null; rm -rf "$TMP"' EXIT
+# Windows: a dead Cygwin pid must not be the number of a live claude.exe
+while :; do
+  bash -c 'exit 0' & DEAD=$!
+  wait "$DEAD"
+  [ -n "$win" ] && MSYS2_ARG_CONV_EXCL='*' tasklist /FI "PID eq $DEAD" /NH /FO CSV | grep -qiE '^"(claude|omp)\.exe"' || break
+done
+C1=
+trap 'kill $H $C1 2>/dev/null; wait $H $C1 2>/dev/null; rm -rf "$TMP"' EXIT
 export HOME="$TMP/home" GIT_CONFIG_GLOBAL="$TMP/gitconfig" GIT_CONFIG_NOSYSTEM=1
 export ANCHOR_LIB="$HOOKS/anchor-lib.sh" LANE_TS="$HOOKS/lanes/lane.ts"
+# Windows: node's os.homedir() reads USERPROFILE and ignores HOME
+[ -n "$win" ] && export USERPROFILE="$HOME"
 unset LANES_ROOT CLAUDE_PROJECT_DIR CLAUDE_PID
 P="$TMP/proj"
 
@@ -48,7 +70,8 @@ echo new > "$TMP/wt-dirty/new.txt"
 git -C "$P" worktree add -q -b feat/gone "$TMP/wt-gone" main
 rm -rf "$TMP/wt-gone"
 
-slug=$(printf '%s' "$P" | sed 's/[^A-Za-z0-9]/-/g')
+NP=$(nat "$P")
+slug=$(printf '%s' "$NP" | sed 's/[^A-Za-z0-9]/-/g')
 AD="$HOME/.claude/task-anchors/$slug"
 LD="$HOME/.claude/lanes/$slug"
 mkdir -p "$AD" "$LD"
@@ -94,8 +117,9 @@ snap() { find "$AD" "$LD" -type f -exec cksum {} + | sort; git -C "$P" worktree 
 # task-anchor.sh after the anchor-lib move: the project_root: line, from the
 # main checkout and from a linked worktree (which maps to the main checkout).
 hook() { printf '{"hook_event_name":"UserPromptSubmit","cwd":"%s","session_id":"x"}' "$1" | bash "$HOOKS/task-anchor.sh" 2>&1; }
-ok "hook: main checkout gives project_root: $P" '[[ "$(hook "$P")" == *"project_root: $P (anchor dir $AD)"* ]]'
-ok "hook: linked worktree maps to the main checkout" '[[ "$(hook "$TMP/wt-unmerged")" == *"project_root: $P (anchor dir $AD)"* ]]'
+rootline() { np "$(hook "$1" | jq -r .hookSpecificOutput.additionalContext | grep '^project_root: ')"; }
+ok "hook: main checkout gives project_root: $NP" '[ "$(rootline "$P")" = "$(np "project_root: $NP (anchor dir $AD)")" ]'
+ok "hook: linked worktree maps to the main checkout" '[ "$(rootline "$TMP/wt-unmerged")" = "$(np "project_root: $NP (anchor dir $AD)")" ]'
 
 # dry run
 before=$(snap)
@@ -157,12 +181,12 @@ ok "last ones: all closed" '[ "$rc" = 0 ] && [ "$(printf "%s\n" "$out" | grep -c
 ok "last ones: INDEX.md and folder removed" '[ ! -e "$AD" ]'
 ok "last ones: dirty branch (no own commits, so merged) deleted" '! git -C "$P" rev-parse -q --verify refs/heads/feat/dirty >/dev/null'
 sweep "$P"
-ok "no anchor folder: one line, exit 0" '[ "$rc" = 0 ] && [ "$out" = "no anchor folder for $P ($AD)" ]'
+ok "no anchor folder: one line, exit 0" '[ "$rc" = 0 ] && [ "$out" = "no anchor folder for $NP ($AD)" ]'
 sweep "$P" close plain
 ok "no anchor folder, close: exit 0" '[ "$rc" = 0 ] && [[ "$out" == "no anchor folder"* ]]'
 mkdir -p "$TMP/plain-dir"
 sweep "$TMP/plain-dir"
-ok "not a git repo: exit 0" '[ "$rc" = 0 ] && [ "$out" = "no anchor folder for $TMP/plain-dir ($HOME/.claude/task-anchors/$(printf "%s" "$TMP/plain-dir" | sed "s/[^A-Za-z0-9]/-/g"))" ]'
+ok "not a git repo: exit 0" '[ "$rc" = 0 ] && [ "$out" = "no anchor folder for $(nat "$TMP/plain-dir") ($HOME/.claude/task-anchors/$(nat "$TMP/plain-dir" | sed "s/[^A-Za-z0-9]/-/g"))" ]'
 sweep "$P" bogus
 ok "unknown command: usage, exit 2" '[ "$rc" = 2 ] && [[ "$out" == usage:* ]]'
 sweep "$P" close
@@ -172,12 +196,36 @@ ok "close with no slug: usage, exit 2" '[ "$rc" = 2 ] && [[ "$out" == usage:* ]]
 Q="$TMP/noremote"
 git init -q "$Q"; c "$Q" init
 git -C "$Q" worktree add -q -b feat/q "$TMP/wt-q" main
-qd="$HOME/.claude/task-anchors/$(printf '%s' "$Q" | sed 's/[^A-Za-z0-9]/-/g')"
+qd="$HOME/.claude/task-anchors/$(nat "$Q" | sed 's/[^A-Za-z0-9]/-/g')"
 mkdir -p "$qd"
 printf 'STATE 2026-11-01 | PARKED | next: q\nworktree: %s\n' "$TMP/wt-q" > "$qd/q.md"
 echo "- q | PARKED | next: q" > "$qd/INDEX.md"
 sweep "$Q"
 ok "fetch fails: warning, merged against local main" '[[ "$out" == "warning: git fetch origin failed"* ]] && [[ "$(row q)" == *" merged "*candidate ]]'
+
+# Windows only: a claim whose pid: is a live claude.exe by its Windows pid (as
+# CLAUDE_PID gives it) is live, so close refuses it; once it exits, it is free.
+# The claude.exe is a copy of PING.EXE, as no real harness can be made to order.
+if [ -n "$win" ]; then
+  WD="$TMP/winproj"
+  mkdir -p "$WD" "$TMP/wh"
+  cp "$(cygpath -S)/PING.EXE" "$TMP/wh/claude.exe"
+  "$TMP/wh/claude.exe" -n 300 127.0.0.1 >/dev/null & C1=$!
+  sleep 0.5
+  WP=$(cat "/proc/$C1/winpid")
+  wd="$HOME/.claude/task-anchors/$(nat "$WD" | sed 's/[^A-Za-z0-9]/-/g')"
+  mkdir -p "$wd"
+  printf 'STATE 2026-11-01 | PARKED | next: w\nowner: eeeeeeee-1111\npid: %s\n' "$WP" > "$wd/w.md"
+  echo "- w | PARKED | next: w" > "$wd/INDEX.md"
+  sweep "$WD"
+  ok "Windows: a live claude.exe by Windows pid is live, no candidate" '[[ "$(row w)" == *" live "* ]] && [[ "$(row w)" != *candidate ]]'
+  sweep "$WD" close w
+  ok "Windows: close refuses a live claude.exe claim" '[ "$rc" = 1 ] && [ "$out" = "not closed w: live claim (owner eeeeeeee, pid $WP)" ] && [ -f "$wd/w.md" ]'
+  kill "$C1"
+  wait "$C1" 2>/dev/null
+  sweep "$WD"
+  ok "Windows: once that claude.exe exits, free, candidate" '[[ "$(row w)" == *" free "*candidate ]]'
+fi
 
 echo "$N checks"
 exit $FAILED

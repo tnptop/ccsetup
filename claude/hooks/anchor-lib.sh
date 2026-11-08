@@ -20,10 +20,16 @@ project_root() {
   printf '%s' "$root${prefix:+/$prefix}"
 }
 
+# The first "key:" line; no grep, head or tr (forks are slow on Windows).
 extract_field() {
-  local file="$1" key="$2" line=
-  line=$(grep -E "^${key}:" "$file" 2>/dev/null | head -1) || true
-  line=$(printf '%s' "$line" | tr -d '\r')
+  local file="$1" key="$2" line='' cr=$'\r'
+  {
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in "${key}:"*) break ;; esac
+      line=''
+    done < "$file"
+  } 2>/dev/null
+  line="${line//$cr/}"
   line="${line#"${key}":}"
   line="${line# }"
   line="${line#"${line%%[![:space:]]*}"}"
@@ -34,7 +40,13 @@ extract_field() {
 # A live harness: kill -0 works and the first word of args is claude or omp.
 # Not comm: Claude Code's comm can be its versioned binary (2.1.306).
 is_harness() {
-  local a=
+  local a=''
+  case "${OSTYPE:-}" in
+    msys*|cygwin*)
+      is_harness_windows "$1"
+      return
+      ;;
+  esac
   kill -0 "$1" 2>/dev/null || return 1
   a=$(ps -p "$1" -o args= 2>/dev/null) || return 1
   a=${a%% *}
@@ -42,10 +54,32 @@ is_harness() {
   [ "$a" = claude ] || [ "$a" = omp ]
 }
 
+# Windows: CLAUDE_PID is a Windows pid, which kill -0 and /proc do not see; a
+# process started from Git Bash has a Cygwin pid, which tasklist does not. A
+# number can be in both, so a Cygwin process that is no harness does not decide.
+is_harness_windows() {
+  local a=''
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  if kill -0 "$1" 2>/dev/null && IFS= read -r -d '' a 2>/dev/null < "/proc/$1/cmdline"; then
+    is_harness_name "$a" && return 0
+  fi
+  # tasklist prints "claude.exe","2144",... or, with no such pid, a sentence.
+  a=$(MSYS2_ARG_CONV_EXCL='*' tasklist /FI "PID eq $1" /NH /FO CSV 2>/dev/null) || return 1
+  a=${a%%,*}
+  is_harness_name "${a//\"/}"
+}
+
+# Arg: a Windows program path or name.
+is_harness_name() {
+  local a=${1##*[/\\]}
+  a=${a%.[eE][xX][eE]}
+  [ "$a" = claude ] || [ "$a" = omp ]
+}
+
 is_task_file() {
   local file="$1" base=
   [ -f "$file" ] || return 1
-  base=$(basename "$file")
+  base=${file##*/}
   [ "$base" = "INDEX.md" ] && return 1
   case "$base" in
     *.md) return 0 ;;
