@@ -41,7 +41,8 @@ function plan(tool, input, directory) {
   const file = input?.path ? path.resolve(directory, input.path) : undefined
   if (tool === "shell") {
     const command = input?.command ?? ""
-    return { cwd, scripts: ["block-dangerous-git.sh"], payload: { tool_name: "Bash", tool_input: { command }, cwd } }
+    const scripts = ["block-dangerous-git.sh", "push-gate.sh"]
+    return { cwd, scripts, payload: { tool_name: "Bash", tool_input: { command }, cwd } }
   }
   if (tool === "write") {
     const tool_input = { file_path: file, content: input?.content ?? "" }
