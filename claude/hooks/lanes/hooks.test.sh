@@ -70,6 +70,15 @@ run() {
 a=$(args_of "$H")
 t "fake harness is live, args start with claude" 'kill -0 $H && kill -0 $H2 && [ "$(basename "${a%% *}")" = claude ] && ! kill -0 $DEAD 2>/dev/null'
 
+# The desktop app runs from ".../Application Support/.../claude".
+if [ -z "$win" ]; then
+  mkdir "$tmp/App Support"
+  ln -s /bin/sleep "$tmp/App Support/claude"
+  "$tmp/App Support/claude" 300 & W=$!
+  t "harness path with a space is live" '( . "$here/../anchor-lib.sh"; is_harness $W && ! is_harness $DEAD )'
+  kill $W; wait $W 2>/dev/null; W=
+fi
+
 sedi() {
   if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi
 }
