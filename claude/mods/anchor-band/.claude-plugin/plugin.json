@@ -1,0 +1,6 @@
+{
+  "name": "anchor-band",
+  "version": "0.1.0",
+  "description": "Shows the CLI status line (model, dir, context, task anchor) as a band above the prompt in the desktop app",
+  "types": "./types/index.d.ts"
+}
