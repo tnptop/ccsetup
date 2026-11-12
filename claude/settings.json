@@ -183,6 +183,9 @@
     "type": "command",
     "command": "bash ~/.claude/statusline-command.sh"
   },
+  "env": {
+    "CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/mods/anchor-band"
+  },
   "enabledPlugins": {
     "code-review@claude-plugins-official": false,
     "figma@claude-plugins-official": false,
