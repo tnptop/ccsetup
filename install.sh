@@ -27,7 +27,8 @@ GHOSTTY_CONFIG="$HOME/Library/Application Support/com.mitchellh.ghostty/config.g
 GHOSTTY_THEME="$HOME/.config/ghostty/themes/opencode"
 BACKUP_ROOT="$CLAUDE/backups"
 BACKUP="$BACKUP_ROOT/ccsetup-$(date +%Y%m%d-%H%M%S)"
-EXCLUDES=(--exclude .DS_Store --exclude '*.bak')
+# Mods: .claude-plugin/types and tsconfig.json are generated per machine.
+EXCLUDES=(--exclude .DS_Store --exclude '*.bak' --exclude .claude-plugin/types --exclude tsconfig.json)
 
 # Skills present in dot-agents/skills that get NO ~/.claude/skills entry.
 SKIP_SKILLS="critique-plan-implementation microsoft-foundry to-issues to-prd"
@@ -91,6 +92,7 @@ pairs() {
   echo "claude/settings.json|$CLAUDE/settings.json"
   echo "claude/statusline-command.sh|$CLAUDE/statusline-command.sh"
   echo "claude/hooks|$CLAUDE/hooks"
+  echo "claude/mods|$CLAUDE/mods"
   echo "dot-agents/skills|$AGENTS/skills"
   echo "dot-agents/.skill-lock.json|$AGENTS/.skill-lock.json"
   echo "workspace/colleague-output-style.md|$HOME/workspace/colleague-output-style.md"
@@ -112,7 +114,8 @@ same() { # same <a> <b>: true when file/dir contents match
   local a="$1" b="$2"
   [ -e "$a" ] && [ -e "$b" ] || return 1
   if [ -d "$a" ]; then
-    [ -d "$b" ] && diff -rq -x .DS_Store -x '*.bak' "$a" "$b" >/dev/null 2>&1
+    # Skip what EXCLUDES skips (grep: diff -x matches names, not paths).
+    [ -d "$b" ] && [ -z "$(diff -rq -x .DS_Store -x '*.bak' -x tsconfig.json "$a" "$b" 2>&1 | grep -Ev '\.claude-plugin(: types$|/types/)' || true)" ]
   else
     [ -f "$b" ] && cmp -s "$a" "$b"
   fi
@@ -200,6 +203,7 @@ promote accepts one of these (absolute, ~/-prefixed, or the repo-relative form):
   $CLAUDE/settings.json            <-> claude/settings.json
   $CLAUDE/statusline-command.sh    <-> claude/statusline-command.sh
   $CLAUDE/hooks/<name>             <-> claude/hooks/<name>
+  $CLAUDE/mods/<name>              <-> claude/mods/<name>
   $CLAUDE/agents/<name>.md         <-> claude/agents/<name>.md
   $CLAUDE/skills/<name>            <-> claude/skills/<name>  (real dir, not a symlink)
   $AGENTS/skills/<name>            <-> dot-agents/skills/<name>
@@ -229,8 +233,8 @@ promote_resolve() {
     "$CLAUDE/AGENTS.md")               PR_REPO="shared/AGENTS.md" ;;
     "$CLAUDE/settings.json")           PR_REPO="claude/settings.json" ;;
     "$CLAUDE/statusline-command.sh")   PR_REPO="claude/statusline-command.sh" ;;
-    "$CLAUDE/hooks/"*)
-      name="${p#"$CLAUDE"/hooks/}"; PR_REPO="claude/hooks/$name" ;;
+    "$CLAUDE/hooks/"*|"$CLAUDE/mods/"*)
+      PR_REPO="claude/${p#"$CLAUDE"/}" ;;
     "$CLAUDE/agents/"*.md)
       name="${p#"$CLAUDE"/agents/}"; PR_REPO="claude/agents/$name" ;;
     "$CLAUDE/skills/"*)
@@ -256,7 +260,7 @@ promote_resolve() {
     shared/AGENTS.md)                  PR_REPO="$p" ;;
     claude/settings.json)              PR_REPO="$p" ;;
     claude/statusline-command.sh)      PR_REPO="$p" ;;
-    claude/hooks/*)                    PR_REPO="$p" ;;
+    claude/hooks/*|claude/mods/*)      PR_REPO="$p" ;;
     claude/agents/*.md)                PR_REPO="$p" ;;
     claude/skills/*)                   PR_REPO="$p" ;;
     dot-agents/skills/*)               PR_REPO="$p" ;;
@@ -273,8 +277,8 @@ promote_resolve() {
     shared/AGENTS.md)               PR_HOME="$CLAUDE/AGENTS.md" ;;
     claude/settings.json)           PR_HOME="$CLAUDE/settings.json" ;;
     claude/statusline-command.sh)   PR_HOME="$CLAUDE/statusline-command.sh" ;;
-    claude/hooks/*)
-      name="${PR_REPO#claude/hooks/}"; PR_HOME="$CLAUDE/hooks/$name" ;;
+    claude/hooks/*|claude/mods/*)
+      PR_HOME="$CLAUDE/${PR_REPO#claude/}" ;;
     claude/agents/*.md)
       name="${PR_REPO#claude/agents/}"; PR_HOME="$CLAUDE/agents/$name" ;;
     claude/skills/*)

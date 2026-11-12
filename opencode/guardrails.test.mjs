@@ -47,6 +47,8 @@ const git = (...args) => execFileSync("git", args, { cwd: dir, stdio: "ignore" }
 git("init", "-q", "--bare", "-b", "main", "origin.git")
 git("clone", "-q", "origin.git", "clone")
 const clone = path.join(dir, "clone")
+// The gate's cd pattern takes POSIX paths only, so on Windows C:\x\y becomes /c/x/y (no cygpath: it is not on a plain Windows PATH).
+const posix = (p) => (process.platform === "win32" ? p.replace(/^([A-Za-z]):/, (_, d) => `/${d.toLowerCase()}`).replaceAll("\\", "/") : p)
 git("-C", clone, "config", "user.email", "me@example.com")
 git("-C", clone, "config", "user.name", "me")
 git("-C", clone, "commit", "-q", "--allow-empty", "-m", "init")
@@ -54,7 +56,7 @@ git("-C", clone, "push", "-q", "origin", "HEAD:main")
 git("-C", clone, "checkout", "-q", "-b", "feat/mine")
 git("-C", clone, "commit", "-q", "--allow-empty", "-m", "mine")
 await call("shell", { command: "git push -u origin feat/mine", workdir: clone })
-await call("shell", { command: `cd ${clone} && git push origin feat/mine 2>&1 | tail -3` })
+await call("shell", { command: `cd ${posix(clone)} && git push origin feat/mine 2>&1 | tail -3` })
 await call("shell", { command: "grep -c 'git push' notes.md" })
 await blocked("shell", { command: "git push origin main", workdir: clone }, /default branch/)
 await blocked("shell", { command: "git push origin feat/mine && glab mr create", workdir: clone }, /accepted shape/)
@@ -71,5 +73,11 @@ writeFileSync(path.join(dir, "block-dangerous-git.sh"), "#!/bin/sh\nexit 1\n")
 chmodSync(path.join(dir, "block-dangerous-git.sh"), 0o755)
 const failing = await load({ hooksDir: dir })
 await assert.rejects(failing("shell", { command: "git status" }), /exit code 1/)
+if (process.platform === "win32") {
+  process.env.CCSETUP_BASH = path.join(dir, "no-such-bash.exe")
+  const noBash = await load({ hooksDir })
+  await assert.rejects(noBash("shell", { command: "git status" }), /need Git Bash/)
+  delete process.env.CCSETUP_BASH
+}
 
 console.log("guardrails tests passed")
