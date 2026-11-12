@@ -37,8 +37,11 @@ extract_field() {
   printf '%s' "$line"
 }
 
-# A live harness: kill -0 works and the first word of args is claude or omp.
-# Not comm: Claude Code's comm can be its versioned binary (2.1.306).
+# A live harness: kill -0 works and the first word of args, or else the
+# basename of comm, is claude or omp. Args first: Claude Code's comm can be its
+# versioned binary (2.1.306). Comm second: the desktop app's path has a space
+# (Application Support), so the first word of args stops early; comm keeps the
+# whole path.
 is_harness() {
   local a=''
   case "${OSTYPE:-}" in
@@ -50,6 +53,9 @@ is_harness() {
   kill -0 "$1" 2>/dev/null || return 1
   a=$(ps -p "$1" -o args= 2>/dev/null) || return 1
   a=${a%% *}
+  a=${a##*/}
+  if [ "$a" = claude ] || [ "$a" = omp ]; then return 0; fi
+  a=$(ps -p "$1" -o comm= 2>/dev/null) || return 1
   a=${a##*/}
   [ "$a" = claude ] || [ "$a" = omp ]
 }
