@@ -8,7 +8,10 @@
 trap 'rc=$?; [ "$rc" -eq 0 ] || exit 2' EXIT
 set -o pipefail    # a pipeline fails when any part of it fails, not only the last
 
-MY_EMAILS=""        # knob: extra author emails that count as "me", space separated
+# knob: extra author emails that count as "me", space separated.
+# tnptop@tnptopmbp.local: the personal Mac's fallback identity before user.email was set
+# (first commit of machine/tnptop, 2026-09-27).
+MY_EMAILS="tnptop@tnptopmbp.local"
 NET_TIMEOUT=20      # knob: seconds allowed for the remote lookup
 
 INPUT=$(cat)
