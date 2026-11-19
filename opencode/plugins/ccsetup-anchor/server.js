@@ -157,6 +157,20 @@ export function lastAssistant(file) {
 }
 
 const reminder = (text) => `\n\n<system-reminder>\n${text}\n</system-reminder>`
+// The prompt's metadata key that holds its reminder. Metadata is saved with the message but not shown or sent.
+export const KEY = "ccsetup.anchor"
+
+// Context hook: adds each user message's saved reminder to its last text part. This changes only the model
+// request, so the TUI shows the prompt as typed. A message keeps the same reminder on every turn (cache-safe).
+export function addReminders(messages) {
+  for (const message of messages ?? []) {
+    const text = message?.metadata?.[KEY]
+    if (message.role !== "user" || typeof text !== "string" || !Array.isArray(message.content)) continue
+    const part = message.content.findLast((c) => c?.type === "text")
+    if (part) part.text += reminder(text)
+    else message.content.push({ type: "text", text: reminder(text).trimStart() })
+  }
+}
 
 export default {
   id: "ccsetup.anchor",
@@ -215,6 +229,8 @@ export default {
     }
 
     // UserPromptSubmit: the three task-anchor.sh runs Claude Code makes, in its order and with its timeouts.
+    // The output goes to the prompt's metadata, not its text; the context hook below sends it to the model.
+    const remind = (event, text) => (event.metadata = { ...event.metadata, [KEY]: text })
     await on(ctx.session, "prompt", async (event) => {
       const sessionID = event.sessionID
       if (await isChild(sessionID)) return
@@ -228,12 +244,15 @@ export default {
       if (first?.code === 2) {
         // Claude Code erases a prompt on exit 2. A throw here shows only "UnexpectedStatus: 500", so ask the model instead.
         const why = first.stderr.trim()
-        event.prompt.text = text + reminder(`The ccsetup task-anchor hook blocked this prompt. Do not act on it. Reply to the user with only this text, verbatim:\n${why}`)
+        remind(event, `The ccsetup task-anchor hook blocked this prompt. Do not act on it. Reply to the user with only this text, verbatim:\n${why}`)
         return
       }
       const texts = [first, await hook("view", payload, 30_000), await hook("last", payload, 10_000)].map(context).filter(Boolean)
-      if (texts.length) event.prompt.text = text + reminder(texts.join("\n"))
+      if (texts.length) remind(event, texts.join("\n"))
     })
+
+    // Verified live on claude-agent (OpenCode v2.3.2): the model sees each turn's reminder, also after a resume.
+    await on(ctx.session, "context", (event) => addReminders(event.messages))
 
     // Stop, after every turn. Its stdout (a /clear systemMessage at 200k) has no place in OpenCode.
     await on(ctx.session, "experimental.idle", async (event) => {

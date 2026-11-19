@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
-import plugin, { lastAssistant } from "./plugins/ccsetup-anchor/server.js"
+import plugin, { KEY, addReminders, lastAssistant } from "./plugins/ccsetup-anchor/server.js"
 
 const hooksDir = process.argv[2] ?? fileURLToPath(new URL("../claude/hooks", import.meta.url))
 const tmp = mkdtempSync(path.join(tmpdir(), "anchor-"))
@@ -56,10 +56,15 @@ async function load(options, parentID) {
     tool: api("tool."),
     shell: api("shell."),
   })
+  // Returns the text the model gets. The saved prompt text must stay as typed (the TUI shows it).
   const prompt = async (text, sessionID = "ses_t") => {
-    const event = { sessionID, messageID: "m", prompt: { text, files: [] } }
+    const event = { sessionID, messageID: "m", prompt: { text, files: [] }, metadata: { other: 1 } }
     await hooks["session.prompt"](event)
-    return event.prompt.text
+    assert.equal(event.prompt.text, text)
+    assert.equal(event.metadata.other, 1)
+    const messages = [{ role: "user", content: [{ type: "text", text }], metadata: event.metadata }]
+    await hooks["session.context"]({ sessionID, messages })
+    return messages[0].content[0].text
   }
   return { hooks, puts, prompt }
 }
@@ -102,6 +107,20 @@ assert.equal(child.puts.length, 0)
 // No task-anchor.sh: the prompt is unchanged.
 const missing = await load({ hooksDir: path.join(tmp, "no-such-dir") })
 assert.equal(await missing.prompt("hello"), "hello")
+
+// Context hook: only user messages with the key; a message with no text part gets one; no metadata is a no-op.
+const msgs = [
+  { role: "user", content: [{ type: "text", text: "a" }, { type: "file" }], metadata: { [KEY]: "R1" } },
+  { role: "assistant", content: [{ type: "text", text: "b" }], metadata: { [KEY]: "R2" } },
+  { role: "user", content: [{ type: "file" }], metadata: { [KEY]: "R3" } },
+  { role: "user", content: [{ type: "text", text: "c" }] },
+]
+addReminders(msgs)
+assert.equal(msgs[0].content[0].text, "a\n\n<system-reminder>\nR1\n</system-reminder>")
+assert.equal(msgs[1].content[0].text, "b")
+assert.deepEqual(msgs[2].content[1], { type: "text", text: "<system-reminder>\nR3\n</system-reminder>" })
+assert.equal(msgs[3].content[0].text, "c")
+addReminders(undefined)
 
 // PostToolUse ctx: the transcript from the kv row, ~130k, appended to the last text item.
 const result = { content: [{ type: "text", text: "a" }, { type: "image" }, { type: "text", text: "out" }] }
