@@ -249,12 +249,14 @@ owned_task() {
   done
 }
 
-# Log this session's transcript in lane $1, once (lane.ts add).
+# Log this transcript in lane $1, once per file (lane.ts add; OpenCode: a
+# session can have more than one).
 lane_add() {
+  local s=${transcript_path##*[/\\]}
   [ -n "$session_id" ] && [ -n "$transcript_path" ] || return 0
-  grep -q "^${session_id}	" "$lanes_dir/$1/log" 2>/dev/null && return 0
+  grep -q "^${s%.jsonl}	" "$lanes_dir/$1/log" 2>/dev/null && return 0
   mkdir -p "$lanes_dir"
-  node "$LANE_TS" add "$cwd" "$1" "$session_id" "$transcript_path" >/dev/null 2>&1
+  node "$LANE_TS" add "$cwd" "$1" "${s%.jsonl}" "$transcript_path" >/dev/null 2>&1
 }
 
 # Stop (owned claim): refresh the lease pid, keep the last exchange (from the
