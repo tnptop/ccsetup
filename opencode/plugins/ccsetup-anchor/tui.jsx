@@ -1,6 +1,7 @@
 // Sidebar part of the task anchor. OpenCode compiles .jsx plugins with Solid (no build step)
-// and resolves solid-js to its own copy. The file logic lives in sidebar.js, tested with node.
+// and resolves solid-js to its own copy. The logic lives in sidebar.js and quota.js, tested with node.
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
+import { colourFor, createPoller, fetchClaude, fetchCodex, quotaLines } from "./quota.js"
 import { readTask, taskLines, truncateLeft } from "./sidebar.js"
 
 const WIDTH = 38 // sidebar is 42 columns with 2 columns of padding on each side
@@ -29,6 +30,33 @@ function TaskBlock(props) {
           <b>Task</b>
         </text>
         <For each={lines()}>{(line) => <text fg={theme.text.muted} wrapMode="word">{line}</text>}</For>
+      </box>
+    </Show>
+  )
+}
+
+// Polling lives in setup (one poller per provider), so this block only formats.
+// tick() re-runs the memo every 5 s, which keeps the "as of" line current.
+function QuotaBlock(props) {
+  const theme = props.context.theme
+  const lines = createMemo(() => {
+    props.tick()
+    const records = props.quota()
+    return quotaLines([records.claude, records.codex], Date.now())
+  })
+  return (
+    <Show when={lines().length > 0}>
+      <box>
+        <text fg={theme.text.base}>
+          <b>Quota</b>
+        </text>
+        <For each={lines()}>
+          {(line) => (
+            <text fg={colourFor(theme, line.level)} wrapMode="none">
+              {line.text}
+            </text>
+          )}
+        </For>
       </box>
     </Show>
   )
@@ -68,11 +96,25 @@ export default {
     const [tick, setTick] = createSignal(0)
     const bump = () => setTick((n) => n + 1)
     const timer = setInterval(bump, REFRESH_MS)
+    // Quota: own 5-minute timers with backoff, one poller per provider (see quota.js).
+    const [quota, setQuota] = createSignal({})
+    const pollers = [
+      ["claude", fetchClaude],
+      ["codex", fetchCodex],
+    ].map(([name, load]) => createPoller({ load, onRecord: (record) => setQuota((q) => ({ ...q, [name]: record })) }))
+    for (const poller of pollers) poller.start().catch(() => {})
     const stops = [
       context.data.on("session.execution.succeeded", bump),
+      context.data.on("session.execution.succeeded", () => {
+        for (const poller of pollers) poller.event().catch(() => {})
+      }),
       context.ui.slot({
         append: "sidebar.content",
         render: (props) => <TaskBlock context={context} sessionID={props.sessionID} tick={tick} />,
+      }),
+      context.ui.slot({
+        append: "sidebar.content",
+        render: () => <QuotaBlock context={context} tick={tick} quota={quota} />,
       }),
       context.ui.slot({
         replace: "sidebar.footer",
@@ -81,6 +123,7 @@ export default {
     ]
     return () => {
       clearInterval(timer)
+      for (const poller of pollers) poller.stop()
       for (const stop of stops) if (typeof stop === "function") stop()
     }
   },
