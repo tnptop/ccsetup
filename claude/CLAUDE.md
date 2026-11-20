@@ -14,7 +14,7 @@ A UserPromptSubmit hook (`~/.claude/hooks/task-anchor.sh`) injects the declared 
 
 Hook-disabled fallback (no TASK ANCHOR block in my prompts): on your first turn, read `~/.claude/task-anchors/<root-slug>/` (root-slug = the project root with every non-alphanumeric character replaced by `-`; skip INDEX.md). The project root is cwd. Inside a linked git worktree, it is the main checkout path plus the same subdirectory. Then apply the same anchor rules, and rewrite the task's `heartbeat:` line to the current ISO time at each checkpoint.
 
-Closing turns (LR 0015): while this session owns an ACTIVE anchor, a turn that ends the work ends with one literal next action: `/park closed` when done, otherwise tell me to type `/clear` (in omp: `/park`, `/park next`, `/park switch <task>`, or `/park closed`). Never "open a fresh session" in that slot, and never write "parked" or "anchor updated" in prose unless `/park` ran in this session.
+Closing turns (LR 0015): while this session owns an ACTIVE anchor, a turn that ends the work ends with one literal next action: `/park closed` when done, `/park` to set the task aside for another one in this window, otherwise tell me to type `/clear` (in omp: `/park`, `/park next`, `/park switch <task>`, or `/park closed`). Never "open a fresh session" in that slot, and never write "parked" or "anchor updated" in prose unless `/park` ran in this session.
 
 # Orchestration
 
