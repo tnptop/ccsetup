@@ -10,7 +10,7 @@
 #   ./install.sh promote <path>... copy only these paths $HOME -> repo (new files ok)
 #   ./install.sh --check           list files that differ between repo and $HOME
 #   ./install.sh --dry-run         with install, sync, or promote: print, touch nothing
-#   ./install.sh opencode          copy only the OpenCode config, agents, rules and guardrail plugin repo -> $HOME
+#   ./install.sh opencode          copy only the OpenCode config, agents, commands, rules and plugins repo -> $HOME
 #   ./install.sh rules             copy only the shared rules and CLAUDE.md repo -> $HOME
 #   ./install.sh plugins           add marketplaces and install plugins via `claude`
 #   ./install.sh --rollback [d]    restore a backup dir (default: the newest one)
@@ -72,7 +72,9 @@ opencode_pairs() {
   echo "claude/hooks/push-gate.sh|$OPENCODE/guardrails/push-gate.sh"
   echo "claude/hooks/token-limit.sh|$OPENCODE/guardrails/token-limit.sh"
   echo "opencode/plugins/verbosity-toggle|$OPENCODE/plugins/verbosity-toggle"
+  echo "opencode/plugins/ccsetup-anchor|$OPENCODE/plugins/ccsetup-anchor"
   echo "opencode/agents|$OPENCODE/agents"
+  echo "opencode/commands|$OPENCODE/commands"
   echo "shared/AGENTS.md|$OPENCODE/AGENTS.md"
 }
 
@@ -212,6 +214,7 @@ promote accepts one of these (absolute, ~/-prefixed, or the repo-relative form):
   $OPENCODE/opencode.json          <-> opencode/opencode.json  (model, agents, permissions and policies only)
   $OPENCODE/plugins/<name>         <-> opencode/plugins/<name>
   $OPENCODE/agents/<name>.md       <-> opencode/agents/<name>.md
+  $OPENCODE/commands/<name>.md     <-> opencode/commands/<name>.md
   $GHOSTTY_CONFIG <-> ghostty/config.ghostty
   $GHOSTTY_THEME <-> ghostty/themes/opencode
 EOF
@@ -249,6 +252,8 @@ promote_resolve() {
       name="${p#"$OPENCODE"/plugins/}"; PR_REPO="opencode/plugins/$name" ;;
     "$OPENCODE/agents/"*.md)
       name="${p#"$OPENCODE"/agents/}"; PR_REPO="opencode/agents/$name" ;;
+    "$OPENCODE/commands/"*.md)
+      name="${p#"$OPENCODE"/commands/}"; PR_REPO="opencode/commands/$name" ;;
     "$GHOSTTY_CONFIG")                 PR_REPO="ghostty/config.ghostty" ;;
     "$GHOSTTY_THEME")                  PR_REPO="ghostty/themes/opencode" ;;
     ghostty/config.ghostty)            PR_REPO="$p" ;;
@@ -256,6 +261,7 @@ promote_resolve() {
     opencode/opencode.json)            PR_REPO="$p" ;;
     opencode/plugins/*)                PR_REPO="$p" ;;
     opencode/agents/*.md)              PR_REPO="$p" ;;
+    opencode/commands/*.md)            PR_REPO="$p" ;;
     claude/CLAUDE.md)                  PR_REPO="$p" ;;
     shared/AGENTS.md)                  PR_REPO="$p" ;;
     claude/settings.json)              PR_REPO="$p" ;;
@@ -300,6 +306,8 @@ promote_resolve() {
       name="${PR_REPO#opencode/plugins/}"; PR_HOME="$OPENCODE/plugins/$name" ;;
     opencode/agents/*.md)
       name="${PR_REPO#opencode/agents/}"; PR_HOME="$OPENCODE/agents/$name" ;;
+    opencode/commands/*.md)
+      name="${PR_REPO#opencode/commands/}"; PR_HOME="$OPENCODE/commands/$name" ;;
   esac
   if [ ! -e "$PR_HOME" ]; then
     log "error: $PR_HOME does not exist"

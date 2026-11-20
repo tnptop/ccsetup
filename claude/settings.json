@@ -15,7 +15,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "opus",
+  "model": "claude-opus-5-5",
   "skillOverrides": {
     "ask-matt": "off",
     "claude-handoff": "off",

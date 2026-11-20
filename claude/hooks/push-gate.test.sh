@@ -63,6 +63,11 @@ git -C "$ME" commit -q --amend -m "k3 amended"
 # feat/hijack: the colleague's branch on the remote; my local branch of that name holds only my commit
 git -C "$COL" checkout -q -b feat/hijack main; c "$COL" h1;      git -C "$COL" push -q origin feat/hijack
 git -C "$ME" checkout -q -b feat/hijack main; c "$ME" h2
+# feat/old-me: first commit by an email from the MY_EMAILS knob (an older identity of mine), then mine
+OLD_ME=$(sed -n 's/^MY_EMAILS="\([^ "]*\).*/\1/p' "$HOOK")
+[ -n "$OLD_ME" ] || { echo "FAIL setup: MY_EMAILS in push-gate.sh is empty"; exit 1; }
+git -C "$ME" checkout -q -b feat/old-me main; c "$ME" o1 --author="old <$OLD_ME>"; c "$ME" o2
+git -C "$ME" push -q origin feat/old-me
 
 # my clone: bring in everything except the colleague's late commit on feat/stale
 git -C "$ME" fetch -q origin main feat/theirs feat/mixed feat/merged
@@ -149,6 +154,7 @@ f B /tmp "two pushes" "cd $ME && git push origin feat/mine; git push origin main
 f B /tmp "not a repo" 'cd /nonexistent/dir && git push origin feat/mine'
 # ownership (first commit of the branch decides)
 f B /tmp "colleague's branch" "cd $ME && git push origin feat/theirs"
+f A /tmp "first commit by an email in MY_EMAILS" "cd $ME && git push origin feat/old-me"
 f A /tmp "first commit mine, colleague commit on top" "cd $ME && git push origin feat/mixed"
 f B /tmp "merged branch, zero unique commits" "cd $ME && git push origin feat/merged"
 f B /tmp "remote tip not fetched" "cd $ME && git push origin feat/stale"
