@@ -75,7 +75,13 @@
     "teach": "off",
     "git-guardrails-claude-code": "off",
     "handoff": "off",
-    "show-me": "off"
+    "show-me": "off",
+    "chief-of-staff": "off",
+    "implement-spec": "off",
+    "retro": "off",
+    "setup-ts-deep-modules": "off",
+    "to-questionnaire": "off",
+    "wait-what": "off"
   },
   "hooks": {
     "PreToolUse": [
