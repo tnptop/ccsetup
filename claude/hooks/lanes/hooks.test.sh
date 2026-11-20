@@ -79,6 +79,12 @@ if [ -z "$win" ]; then
   kill $W; wait $W 2>/dev/null; W=
 fi
 
+# OpenCode: the plugin's process is opencode (opencode.exe on Windows).
+ln -s /bin/sleep "$tmp/opencode"
+"$tmp/opencode" 300 & W=$!
+t "opencode is a harness" '( . "$here/../anchor-lib.sh"; is_harness $W && is_harness_name "C:\\x\\opencode.exe" && ! is_harness_name opencodex )'
+kill $W; wait $W 2>/dev/null; W=
+
 sedi() {
   if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi
 }
@@ -172,8 +178,11 @@ anchors S1
 o=$(run "$HOOK" "$(ups S1 first "$T160")")
 t "owned claim, no lanes dir: lanes and lane dir made, lane instruction" '[ -d "$LD/t1" ] && printf %s "$o" | jq -r .hookSpecificOutput.additionalContext | grep -qF "(/claim-task there)"'
 o=$(run "$HOOK" "$(ups S1 second "$T160")")
-t "UserPromptSubmit twice: one log line" '[ "$(cat "$LD/t1/log")" = "$(printf "S1\t%s" "$T160")" ]'
+t "UserPromptSubmit twice: one log line" '[ "$(cat "$LD/t1/log")" = "$(printf "t160\t%s" "$T160")" ]'
 t "UserPromptSubmit: prompt file written" '[ "$(cat "$LD/t1/prompt")" = second ]'
+# OpenCode: one session, a new transcript (after compaction): logged by its name
+run "$HOOK" "$(ups S1 second "$T10")" >/dev/null
+t "UserPromptSubmit: a new transcript of the same session is logged" '[ "$(cat "$LD/t1/log")" = "$(printf "t160\t%s\nt10\t%s" "$T160" "$T10")" ]'
 t "UserPromptSubmit lanes on: no nudge at 160k" '! printf %s "$o" | grep -q "context ~"'
 o=$(run "$HOOK" "$(ups S1 third "$T250")")
 t "UserPromptSubmit lanes on: /clear nudge at 250k" 'printf %s "$o" | jq -r .hookSpecificOutput.additionalContext | grep -qF "context ~250k — finish this step, then tell the user to type /clear (you cannot run it)."'
@@ -196,7 +205,7 @@ stop_json() { jq -nc --arg tp "$1" '{hook_event_name:"Stop",session_id:"S1",tran
 anchors S1
 sedi -e "s/^pid: .*/pid: $DEAD/" -e "s/^heartbeat: .*/heartbeat: 2026-01-01T00:00:00+07:00/" "$AD/t1.md"
 mkdir -p "$LD/t1"
-printf 'S1\t%s\n' "$T160" > "$LD/t1/log"
+printf 't160\t%s\n' "$T160" > "$LD/t1/log"
 printf 'my prompt' > "$LD/t1/prompt"
 j=$(stop_json "$T160")
 t0=$(now)
@@ -443,7 +452,7 @@ o=$(PD="$WT" run "$HOOK" "$(ups S1 first "$T160")")
 t "worktree: owned task found in the main anchor dir" 'printf %s "$o" | jq -r .hookSpecificOutput.additionalContext | grep -qF "DECLARED TASK ANCHOR ($AD/t1.md"'
 out=$(PD="$WT" STUB_MARKER="$tmp/marker3" LANE_TS_T="$tmp/stub.js" run "$HOOK" "$(stop_json "$T160")")
 for _ in $(seq 1 40); do [ -e "$tmp/marker3" ] && break; sleep 0.25; done
-t "worktree: Stop logs and builds in the main lanes dir, no worktree dirs" '[ "$(np "$(cat "$LD/t1/log")")" = "$(np "$(printf "S1\t%s" "$T160")")" ] && [ "$(np "$(cat "$tmp/marker3" 2>/dev/null)")" = "$(np "build $P t1|")" ] && [ ! -e "$tmp/lanes/$(sl "$WT")" ] && [ ! -e "$tmp/home/.claude/task-anchors/$(sl "$WT")" ]'
+t "worktree: Stop logs and builds in the main lanes dir, no worktree dirs" '[ "$(np "$(cat "$LD/t1/log")")" = "$(np "$(printf "t160\t%s" "$T160")")" ] && [ "$(np "$(cat "$tmp/marker3" 2>/dev/null)")" = "$(np "build $P t1|")" ] && [ ! -e "$tmp/lanes/$(sl "$WT")" ] && [ ! -e "$tmp/home/.claude/task-anchors/$(sl "$WT")" ]'
 o=$(PD="$P/sub" run "$HOOK" "$(ups S9 hi "$T10")")
 o2=$(PD="$WT/sub" run "$HOOK" "$(ups S9 hi "$T10")")
 t "subdirectory: main checkout keeps \$P/sub, worktree subdir maps to \$P/sub" 'rootline "$o" "$P/sub" && rootline "$o2" "$P/sub"'

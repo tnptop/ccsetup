@@ -38,8 +38,8 @@ extract_field() {
 }
 
 # A live harness: kill -0 works and the first word of args, or else the
-# basename of comm, is claude or omp. Args first: Claude Code's comm can be its
-# versioned binary (2.1.306). Comm second: the desktop app's path has a space
+# basename of comm, is claude, omp or opencode. Args first: Claude Code's comm
+# can be its versioned binary (2.1.306). Comm second: the desktop app's path has a space
 # (Application Support), so the first word of args stops early; comm keeps the
 # whole path.
 is_harness() {
@@ -54,10 +54,10 @@ is_harness() {
   a=$(ps -p "$1" -o args= 2>/dev/null) || return 1
   a=${a%% *}
   a=${a##*/}
-  if [ "$a" = claude ] || [ "$a" = omp ]; then return 0; fi
+  if [ "$a" = claude ] || [ "$a" = omp ] || [ "$a" = opencode ]; then return 0; fi
   a=$(ps -p "$1" -o comm= 2>/dev/null) || return 1
   a=${a##*/}
-  [ "$a" = claude ] || [ "$a" = omp ]
+  [ "$a" = claude ] || [ "$a" = omp ] || [ "$a" = opencode ]
 }
 
 # Windows: CLAUDE_PID is a Windows pid, which kill -0 and /proc do not see; a
@@ -79,7 +79,7 @@ is_harness_windows() {
 is_harness_name() {
   local a=${1##*[/\\]}
   a=${a%.[eE][xX][eE]}
-  [ "$a" = claude ] || [ "$a" = omp ]
+  [ "$a" = claude ] || [ "$a" = omp ] || [ "$a" = opencode ]
 }
 
 is_task_file() {
