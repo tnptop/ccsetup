@@ -99,6 +99,29 @@ export function taskLines(model) {
   return [`${model.slug} · ${s.status}`, s.next, s.step && `step ${s.step}`].filter(Boolean)
 }
 
+// At this context size task-anchor.sh asks for /clear on Stop (Claude Code); in OpenCode the sidebar shows it.
+export const CLEAR_AT = 200_000
+
+// Context tokens of a session from the TUI's messages (context.data.session.message.list), or undefined.
+// Same message as OpenCode's own context figure: the last assistant message with tokens after the last
+// completed compaction. Sum = input + cache read + cache write (claude-agent reports a tiny input and a
+// large cache read), as task-anchor.sh counts it.
+export function contextTokens(messages) {
+  if (!Array.isArray(messages)) return undefined
+  const compacted = messages.findLastIndex((m) => m?.type === "compaction" && m.status === "completed")
+  const last = messages.findLast((m, i) => i > compacted && m?.type === "assistant" && m.tokens)
+  if (!last) return undefined
+  const t = last.tokens
+  const sum = (t.input ?? 0) + (t.cache?.read ?? 0) + (t.cache?.write ?? 0)
+  return Number.isFinite(sum) ? sum : undefined
+}
+
+// The warning line, or "" below the threshold or with no data.
+export function clearWarning(tokens, threshold = CLEAR_AT) {
+  if (!Number.isFinite(tokens) || tokens < threshold) return ""
+  return `⚠ context ~${Math.floor(tokens / 1000)}k — type /clear`
+}
+
 // Keeps the end of a path, which names the folder: "…/personal/ccsetup".
 export function truncateLeft(text, width) {
   if (!text || text.length <= width) return text ?? ""

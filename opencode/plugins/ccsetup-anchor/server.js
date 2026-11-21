@@ -6,6 +6,7 @@ import { execFileSync, spawn } from "node:child_process"
 import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { anchorDirOf, takeHandoff } from "./handoff.js"
 
 // A background OpenCode service may not have Homebrew on PATH (task-anchor.sh needs jq).
 const PATH_ENV = [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean).join(path.delimiter)
@@ -228,12 +229,25 @@ export default {
       } catch {}
     }
 
+    // /clear hand-off (tui.jsx writes the note, handoff.js has the rules): on the first prompt this process
+    // sees for a session, before the hook runs, take the claim of the session the TUI cleared. The hook's
+    // view and last runs then give this first prompt the lane view and the last exchange.
+    const seen = new Set()
+    async function handoff(sessionID) {
+      try {
+        if (seen.has(sessionID)) return
+        seen.add(sessionID)
+        await takeHandoff({ anchorDir: await anchorDirOf(directory, os.homedir()), sessionID })
+      } catch {}
+    }
+
     // UserPromptSubmit: the three task-anchor.sh runs Claude Code makes, in its order and with its timeouts.
     // The output goes to the prompt's metadata, not its text; the context hook below sends it to the model.
     const remind = (event, text) => (event.metadata = { ...event.metadata, [KEY]: text })
     await on(ctx.session, "prompt", async (event) => {
       const sessionID = event.sessionID
       if (await isChild(sessionID)) return
+      await handoff(sessionID)
       await putMemory(sessionID)
       const text = event.prompt?.text ?? ""
       // `opencode run "a b"` sends the message wrapped in double quotes; the park guard reads the bare text.
@@ -254,7 +268,8 @@ export default {
     // Verified live on claude-agent (OpenCode v2.3.2): the model sees each turn's reminder, also after a resume.
     await on(ctx.session, "context", (event) => addReminders(event.messages))
 
-    // Stop, after every turn. Its stdout (a /clear systemMessage at 200k) has no place in OpenCode.
+    // Stop, after every turn. Its stdout (a /clear systemMessage at 200k) has no place in OpenCode;
+    // the sidebar Task block (tui.jsx) shows that warning instead.
     await on(ctx.session, "experimental.idle", async (event) => {
       const transcript_path = await transcript(event.sessionID, directory, dbPath)
       const last_assistant_message = transcript_path ? lastAssistant(transcript_path) : ""

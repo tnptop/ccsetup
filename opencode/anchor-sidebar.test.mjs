@@ -5,7 +5,10 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
+  CLEAR_AT,
   anchorsDir,
+  clearWarning,
+  contextTokens,
   countTasks,
   findOwnedTask,
   ownedBy,
@@ -60,6 +63,27 @@ const owned = (firstLine) => ({ owned: true, slug: "t", firstLine, state: parseS
 assert.deepEqual(taskLines(owned("STATE d | ACTIVE | next: do x | step 1/2")), ["t · ACTIVE", "do x", "step 1/2"])
 assert.deepEqual(taskLines(owned("STATE d | PARKED | next: do y")), ["t · PARKED", "do y"])
 assert.deepEqual(taskLines(owned("free text")), ["t", "free text"])
+
+// contextTokens: last assistant message with tokens after the last completed compaction; input + cache.
+const tokens = (input, read, write, output = 999) => ({ input, output, reasoning: 5, cache: { read, write } })
+const assistant = (t) => ({ type: "assistant", tokens: t })
+assert.equal(contextTokens([assistant(tokens(3, 150_000, 2_000))]), 152_003)
+assert.equal(contextTokens([assistant(tokens(1, 10, 0)), assistant(tokens(3, 200_000, 500)), { type: "user" }, { type: "assistant" }]), 200_503)
+assert.equal(contextTokens([assistant(tokens(1, 250_000, 0)), { type: "compaction", status: "completed" }, { type: "user" }]), undefined)
+assert.equal(contextTokens([assistant(tokens(1, 250_000, 0)), { type: "compaction", status: "running" }]), 250_001)
+assert.equal(contextTokens([{ type: "compaction", status: "completed" }, assistant(tokens(2, 30_000, 0))]), 30_002)
+assert.equal(contextTokens([assistant({ input: 7 })]), 7)
+assert.equal(contextTokens([]), undefined)
+assert.equal(contextTokens(undefined), undefined)
+
+// clearWarning: from 200k, floored to k; nothing below or with no data.
+assert.equal(CLEAR_AT, 200_000)
+assert.equal(clearWarning(199_999), "")
+assert.equal(clearWarning(200_000), "⚠ context ~200k — type /clear")
+assert.equal(clearWarning(234_999), "⚠ context ~234k — type /clear")
+assert.equal(clearWarning(undefined), "")
+assert.equal(clearWarning(NaN), "")
+assert.equal(clearWarning(1_500, 1_000), "⚠ context ~1k — type /clear")
 
 // Files: owned task in another project's dir, count, readTask
 const home = mkdtempSync(path.join(tmpdir(), "anchor-sidebar-"))
