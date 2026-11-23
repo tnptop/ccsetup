@@ -1,11 +1,12 @@
 // Run with: node opencode/anchor.test.mjs [hooks dir, default this repo's claude/hooks]
 // A temp HOME and config dir: nothing reads or writes the real ~/.claude.
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
+import { noteFile, removeNote, writeNote } from "./plugins/ccsetup-anchor/handoff.js"
 import plugin, { KEY, addReminders, lastAssistant } from "./plugins/ccsetup-anchor/server.js"
 
 const hooksDir = process.argv[2] ?? fileURLToPath(new URL("../claude/hooks", import.meta.url))
@@ -98,6 +99,20 @@ assert.equal(puts.length, 1)
 text = await prompt("note this /park closed")
 assert.match(text, /^note this \/park closed\n\n<system-reminder>\nThe ccsetup task-anchor hook blocked this prompt\./)
 assert.match(text, /NOT SENT — \/park only runs/)
+
+// /clear hand-off: the TUI's note names ses_new, so its first prompt owns ses_t's task before the hook runs.
+await writeNote(anchors, 4242, { from: "ses_t", at: Date.now(), to: "ses_new" })
+text = await prompt("first prompt after /clear", "ses_new")
+assert.match(text, /DECLARED TASK ANCHOR/)
+assert.match(readFileSync(task, "utf8"), /^owner: ses_new$/m)
+assert.ok(!existsSync(noteFile(anchors, 4242)))
+// A note for another session (a /new elsewhere) moves nothing.
+await writeNote(anchors, 4242, { from: "ses_new", at: Date.now(), to: "ses_other" })
+text = await prompt("hello", "ses_new2")
+assert.match(text, /TASK ANCHOR INDEX/)
+assert.match(readFileSync(task, "utf8"), /^owner: ses_new$/m)
+assert.ok(existsSync(noteFile(anchors, 4242)))
+await removeNote(noteFile(anchors, 4242))
 
 // A child session is skipped.
 const child = await load({ hooksDir }, "ses_parent")
