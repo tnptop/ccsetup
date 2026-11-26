@@ -2,6 +2,7 @@
 // and resolves solid-js to its own copy. The logic lives in sidebar.js and quota.js, tested with node.
 import { createEffect, createMemo, createRoot, createSignal, For, onCleanup, Show, untrack } from "solid-js"
 import { anchorDirOf, noteFile, ownedTasks, removeNote, writeNote } from "./handoff.js"
+import { removeWindow, windowsDir, writeWindow } from "./lease.js"
 import { colourFor, createPoller, fetchClaude, fetchCodex, quotaLines } from "./quota.js"
 import { clearWarning, contextTokens, readTask, taskLines, truncateLeft } from "./sidebar.js"
 
@@ -110,6 +111,32 @@ function clearHandoff(context) {
   })
 }
 
+// Per-TUI lease (see lease.js): ~/.claude/task-anchors/.windows/<this TUI's pid>.json names the root session
+// this window views (null on home). server.js writes this pid on the claim's pid: line, so the claim goes
+// stale when the window closes. A killed TUI leaves its file; the server deletes files of dead pids.
+function publishWindow(context) {
+  const dir = windowsDir()
+  let queue = Promise.resolve()
+  let last
+  return createRoot((dispose) => {
+    createEffect(() => {
+      try {
+        const route = context.ui.router.current()
+        const id = route?.type === "session" ? route.sessionID : undefined
+        const session = id ? (context.data.session.root(id) ?? id) : null // tracked: re-runs when the store knows the root
+        if (session === last) return
+        last = session
+        queue = queue.then(() => writeWindow(dir, process.pid, session)).catch(() => {})
+      } catch {}
+    })
+    return () => {
+      dispose()
+      last = undefined
+      queue = queue.then(() => removeWindow(dir, process.pid)).catch(() => {})
+    }
+  })
+}
+
 // Polling lives in setup (one poller per provider), so this block only formats.
 // tick() re-runs the memo every 5 s, which keeps the "as of" line current.
 function QuotaBlock(props) {
@@ -179,6 +206,7 @@ export default {
     ].map(([name, load]) => createPoller({ load, onRecord: (record) => setQuota((q) => ({ ...q, [name]: record })) }))
     for (const poller of pollers) poller.start().catch(() => {})
     const stops = [
+      publishWindow(context),
       clearHandoff(context),
       context.data.on("session.execution.succeeded", bump),
       context.data.on("session.execution.succeeded", () => {

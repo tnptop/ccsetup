@@ -7,6 +7,7 @@ import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync } fr
 import os from "node:os"
 import path from "node:path"
 import { anchorDirOf, takeHandoff } from "./handoff.js"
+import { leasePid, windowsDir } from "./lease.js"
 
 // A background OpenCode service may not have Homebrew on PATH (task-anchor.sh needs jq).
 const PATH_ENV = [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean).join(path.delimiter)
@@ -180,12 +181,13 @@ export default {
     const dbPath = ctx.options?.dbPath ?? defaultDb()
     const directory = ctx.location?.directory ?? process.cwd()
     const script = path.join(hooksDir, "task-anchor.sh")
-    const env = { CLAUDE_PID: String(process.pid), CLAUDE_PROJECT_DIR: directory }
+    const windows = windowsDir(os.homedir())
     const memoryPut = new Map()
     let bash
 
     // task-anchor.sh [arg] with a Claude-shaped hook payload; undefined when it cannot run.
-    async function hook(arg, payload, timeout) {
+    // pid: the CLAUDE_PID the hook writes on a claim's pid: line (see lease below); default the service pid.
+    async function hook(arg, payload, timeout, pid = process.pid) {
       try {
         if (!existsSync(script)) return undefined
         if (process.platform === "win32" && !bash) {
@@ -194,6 +196,7 @@ export default {
           bash = found
         }
         const args = arg ? [arg] : []
+        const env = { CLAUDE_PID: String(pid), CLAUDE_PROJECT_DIR: directory }
         const stdin = JSON.stringify({ cwd: directory, ...payload })
         return bash ? await run(bash, [script, ...args], stdin, directory, env, timeout) : await run(script, args, stdin, directory, env, timeout)
       } catch {
@@ -206,6 +209,30 @@ export default {
         return Boolean((await ctx.session.get({ sessionID }))?.parentID)
       } catch {
         return false
+      }
+    }
+
+    // The root session: tui.jsx names a subagent's window by its root.
+    async function rootOf(sessionID) {
+      let id = sessionID
+      try {
+        for (let i = 0; i < 10; i++) {
+          const parent = (await ctx.session.get({ sessionID: id }))?.parentID
+          if (!parent) break
+          id = parent
+        }
+      } catch {}
+      return id
+    }
+
+    // Per-TUI lease (lease.js has the rule): the pid of the one live TUI that views this session, else the
+    // pid the session's claim already has, else the service pid. Any error gives the service pid.
+    async function lease(sessionID) {
+      try {
+        const anchorDir = await anchorDirOf(directory, os.homedir())
+        return await leasePid({ windowsDir: windows, anchorDir, sessionID, root: await rootOf(sessionID), fallback: process.pid })
+      } catch {
+        return process.pid
       }
     }
 
@@ -254,14 +281,16 @@ export default {
       const prompt = text.length > 1 && text.startsWith('"') && text.endsWith('"') ? text.slice(1, -1) : text
       const transcript_path = await transcript(sessionID, directory, dbPath)
       const payload = { hook_event_name: "UserPromptSubmit", session_id: sessionID, transcript_path, prompt }
-      const first = await hook("", payload, 10_000)
+      // After the hand-off: a claim moved by /clear keeps its pid: line, the same TUI's pid.
+      const pid = await lease(sessionID)
+      const first = await hook("", payload, 10_000, pid)
       if (first?.code === 2) {
         // Claude Code erases a prompt on exit 2. A throw here shows only "UnexpectedStatus: 500", so ask the model instead.
         const why = first.stderr.trim()
         remind(event, `The ccsetup task-anchor hook blocked this prompt. Do not act on it. Reply to the user with only this text, verbatim:\n${why}`)
         return
       }
-      const texts = [first, await hook("view", payload, 30_000), await hook("last", payload, 10_000)].map(context).filter(Boolean)
+      const texts = [first, await hook("view", payload, 30_000, pid), await hook("last", payload, 10_000, pid)].map(context).filter(Boolean)
       if (texts.length) remind(event, texts.join("\n"))
     })
 
@@ -273,7 +302,8 @@ export default {
     await on(ctx.session, "experimental.idle", async (event) => {
       const transcript_path = await transcript(event.sessionID, directory, dbPath)
       const last_assistant_message = transcript_path ? lastAssistant(transcript_path) : ""
-      await hook("", { hook_event_name: "Stop", session_id: event.sessionID, transcript_path, last_assistant_message }, 10_000)
+      const pid = await lease(event.sessionID)
+      await hook("", { hook_event_name: "Stop", session_id: event.sessionID, transcript_path, last_assistant_message }, 10_000, pid)
     })
 
     // PostToolUse ctx: the context size on a tool result at each new 25k.
@@ -285,14 +315,37 @@ export default {
       if (item) item.text += `\n\n${note}`
     })
 
-    // The shell tool's commands get the plugin's pid, the pid the hook writes on a claim's pid: line.
+    // The shell tool's commands get the session's lease pid as CLAUDE_PID, so `/claim-task` writes it on pid:.
+    // OpenCode v2.3.2's create.before event has no session id (it sets OPENCODE_SESSION_ID only after this
+    // hook), so tool.execute.before, which has one, notes the session by the command text it is about to run.
+    // A command with no note (a user `!` command) or an error gets the service pid, as before.
+    const TTL_MS = 10 * 60 * 1000 // a permission prompt can hold a command between the two hooks
+    const pending = new Map() // command text → [{ sessionID, at }], oldest first
+    await on(ctx.tool, "execute.before", async (event) => {
+      const command = event?.input?.command
+      if (typeof command !== "string" || !event.sessionID) return
+      const now = Date.now()
+      for (const [key, list] of pending) {
+        const live = list.filter((n) => now - n.at <= TTL_MS)
+        if (live.length) pending.set(key, live)
+        else pending.delete(key)
+      }
+      pending.set(command, [...(pending.get(command) ?? []), { sessionID: event.sessionID, at: now }].slice(-20))
+    })
     await on(ctx.shell, "create.before", async (event) => {
-      if (event.env) event.env.CLAUDE_PID = String(process.pid)
+      if (!event.env) return
+      event.env.CLAUDE_PID = String(process.pid)
+      const list = pending.get(event.command)
+      const note = list?.shift()
+      if (list && !list.length) pending.delete(event.command)
+      if (note && Date.now() - note.at <= TTL_MS) event.env.CLAUDE_PID = String(await lease(note.sessionID))
     })
 
     // SessionEnd: release the claim of a deleted session.
-    // ponytail: the service pid is long-lived, so a claim from an abandoned session stays live until the session
-    // is deleted; `/claim-task steal` covers it. Upgrade path: a lease on the TUI client's pid.
+    // The pid: line is a per-TUI lease (lease.js): the TUI window the user works in, so a claim goes stale
+    // when its window closes and the next session may take it without asking. A session no TUI views keeps
+    // the pid its claim has; one that never had a TUI (`opencode run`) has the long-lived service pid, so its
+    // claim stays live until it is deleted here or another window runs `/claim-task steal`.
     if (typeof ctx.event?.subscribe === "function") {
       ;(async () => {
         try {

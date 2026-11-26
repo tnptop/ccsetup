@@ -7,6 +7,7 @@ import path from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import { noteFile, removeNote, writeNote } from "./plugins/ccsetup-anchor/handoff.js"
+import { removeWindow, windowFile, windowsDir, writeWindow } from "./plugins/ccsetup-anchor/lease.js"
 import plugin, { KEY, addReminders, lastAssistant } from "./plugins/ccsetup-anchor/server.js"
 
 const hooksDir = process.argv[2] ?? fileURLToPath(new URL("../claude/hooks", import.meta.url))
@@ -88,12 +89,42 @@ assert.doesNotMatch(puts[0].value, /# Orchestration|# Guardrails|@AGENTS/)
 assert.ok(puts[0].value.includes(path.join(transcriptDir, "memory")))
 assert.match(puts[0].value, /- \[Fact\]\(fact\.md\) — a fact/)
 
-// Owned by ses_t: the declared task, and the lease pid is this process (the plugin's).
+// Owned by ses_t, no TUI views it (opencode run): the declared task, and the claim keeps its pid.
 writeFileSync(task, "STATE 2026-11-12 | ACTIVE | next: do x\nowner: ses_t\npid: 1\n")
 text = await prompt("go on")
 assert.match(text, /DECLARED TASK ANCHOR/)
-assert.match(readFileSync(task, "utf8"), new RegExp(`^pid: ${process.pid}$`, "m"))
+assert.match(readFileSync(task, "utf8"), /^pid: 1$/m)
 assert.equal(puts.length, 1)
+
+// Per-TUI lease: the one live TUI whose window file names ses_t gives the pid (process.ppid stands in for it).
+const tui = process.ppid
+const wins = windowsDir(process.env.HOME)
+await writeWindow(wins, tui, "ses_t")
+await prompt("go on")
+assert.match(readFileSync(task, "utf8"), new RegExp(`^pid: ${tui}$`, "m"))
+// A second live TUI on ses_t: ambiguous, so the claim keeps the pid it has.
+await writeWindow(wins, process.pid, "ses_t")
+writeFileSync(task, "STATE 2026-11-12 | ACTIVE | next: do x\nowner: ses_t\npid: 77\n")
+await prompt("go on")
+assert.match(readFileSync(task, "utf8"), /^pid: 77$/m)
+// That second TUI goes home: one viewer again. A dead TUI's file is deleted when read.
+await writeWindow(wins, process.pid, null)
+writeFileSync(windowFile(wins, 2 ** 22 + 1), JSON.stringify({ session: "ses_t", at: new Date().toISOString() }))
+await prompt("go on")
+assert.match(readFileSync(task, "utf8"), new RegExp(`^pid: ${tui}$`, "m"))
+assert.ok(!existsSync(windowFile(wins, 2 ** 22 + 1)))
+// Stop refreshes the claim to the viewing TUI too.
+writeFileSync(task, "STATE 2026-11-12 | ACTIVE | next: do x\nowner: ses_t\npid: 77\n")
+await hooks["session.experimental.idle"]({ sessionID: "ses_t", background: [] })
+assert.match(readFileSync(task, "utf8"), new RegExp(`^pid: ${tui}$`, "m"))
+// A background tab finishing its turn (no window names it) keeps its pid.
+await writeWindow(wins, tui, "ses_other")
+writeFileSync(task, "STATE 2026-11-12 | ACTIVE | next: do x\nowner: ses_t\npid: 77\n")
+await hooks["session.experimental.idle"]({ sessionID: "ses_t", background: [] })
+assert.match(readFileSync(task, "utf8"), /^pid: 77$/m)
+await writeWindow(wins, tui, "ses_t")
+await prompt("go on")
+assert.match(readFileSync(task, "utf8"), new RegExp(`^pid: ${tui}$`, "m"))
 
 // A /park typed mid-sentence: the hook blocks (exit 2); the plugin does not throw, it tells the model.
 text = await prompt("note this /park closed")
@@ -101,10 +132,12 @@ assert.match(text, /^note this \/park closed\n\n<system-reminder>\nThe ccsetup t
 assert.match(text, /NOT SENT — \/park only runs/)
 
 // /clear hand-off: the TUI's note names ses_new, so its first prompt owns ses_t's task before the hook runs.
+// No window names ses_new yet: the moved claim keeps its pid: line, the same TUI's pid.
 await writeNote(anchors, 4242, { from: "ses_t", at: Date.now(), to: "ses_new" })
 text = await prompt("first prompt after /clear", "ses_new")
 assert.match(text, /DECLARED TASK ANCHOR/)
 assert.match(readFileSync(task, "utf8"), /^owner: ses_new$/m)
+assert.match(readFileSync(task, "utf8"), new RegExp(`^pid: ${tui}$`, "m"))
 assert.ok(!existsSync(noteFile(anchors, 4242)))
 // A note for another session (a /new elsewhere) moves nothing.
 await writeNote(anchors, 4242, { from: "ses_new", at: Date.now(), to: "ses_other" })
@@ -150,9 +183,28 @@ assert.equal(unknown.content[0].text, "out")
 assert.equal(lastAssistant(path.join(transcriptDir, "uuid-1.jsonl")), "the last reply")
 await hooks["session.experimental.idle"]({ sessionID: "ses_t", background: [] })
 
-// The shell tool gets the plugin's pid.
+// The shell tool: a command with no tool call (a user `!` command) gets the plugin's pid.
 const shell = { command: "true", env: {} }
 await hooks["shell.create.before"](shell)
 assert.equal(shell.env.CLAUDE_PID, String(process.pid))
+// A shell tool call of a session one TUI views gets that TUI's pid; tool.execute.before notes the session.
+await writeWindow(wins, tui, "ses_claim")
+await hooks["tool.execute.before"]({ tool: "shell", sessionID: "ses_claim", input: { command: "claim it" } })
+await hooks["tool.execute.before"]({ tool: "shell", sessionID: "ses_nobody", input: { command: "claim it" } })
+const claim = { command: "claim it", env: {} }
+await hooks["shell.create.before"](claim)
+assert.equal(claim.env.CLAUDE_PID, String(tui))
+// The second note of the same text: its session (no TUI, no task) gets the plugin's pid. Each note is used once.
+const again = { command: "claim it", env: {} }
+await hooks["shell.create.before"](again)
+assert.equal(again.env.CLAUDE_PID, String(process.pid))
+const third = { command: "claim it", env: {} }
+await hooks["shell.create.before"](third)
+assert.equal(third.env.CLAUDE_PID, String(process.pid))
+// No env, no input: no throw.
+await hooks["shell.create.before"]({ command: "x" })
+await hooks["tool.execute.before"]({ tool: "read", sessionID: "ses_claim", input: { path: "x" } })
+await removeWindow(wins, tui)
+await removeWindow(wins, process.pid)
 
 console.log("anchor tests passed")
